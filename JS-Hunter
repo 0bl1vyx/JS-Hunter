@@ -1,0 +1,308 @@
+#!/bin/bash
+
+# --- Colors & Styles ---
+# Color scheme: Deep purples, neon greens, electric blues for a cyber-hunting theme.
+PURPLE=$(tput setaf 5)  # Main theme
+NEON_GREEN=$(tput setaf 10)  # Success/Highlights
+ELECTRIC_BLUE=$(tput setaf 12)  # Info/Headers
+ORANGE=$(tput setaf 208)  # Warnings
+CRIMSON=$(tput setaf 9)  # Errors
+SILVER=$(tput setaf 7)  # Text
+DARK_GRAY=$(tput setaf 8)  # Dim text
+BOLD=$(tput bold)
+UNDERLINE=$(tput smul)
+NC=$(tput sgr0)  # No Color
+
+# --- UI Functions ---
+banner() {
+    echo -e "${PURPLE}${BOLD}"
+    echo " ╔══════════════════════════════════════════════════════╗"
+    echo " ║                                                      ║"
+    echo " ║   ${ELECTRIC_BLUE}░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░${PURPLE}   ║"
+    echo " ║   ${ELECTRIC_BLUE}██████╗ ███████╗ ██████╗ ██████╗ ███╗   ██╗     ██╗███████╗${PURPLE}   ║"
+    echo " ║   ${ELECTRIC_BLUE}██╔══██╗██╔════╝██╔════╝██╔═══██╗████╗  ██║     ██║██╔════╝${PURPLE}   ║"
+    echo " ║   ${ELECTRIC_BLUE}██████╔╝█████╗  ██║     ██║   ██║██╔██╗ ██║     ██║███████╗${PURPLE}   ║"
+    echo " ║   ${ELECTRIC_BLUE}██╔══██╗██╔══╝  ██║     ██║   ██║██║╚██╗██║██   ██║╚════██║${PURPLE}   ║"
+    echo " ║   ${ELECTRIC_BLUE}██║  ██║███████╗╚██████╗╚██████╔╝██║ ╚████║╚█████╔╝███████║${PURPLE}   ║"
+    echo " ║   ${ELECTRIC_BLUE}╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚═════╝ ╚═╝  ╚═══╝ ╚════╝ ╚══════╝${PURPLE}   ║"
+    echo " ║   ${ELECTRIC_BLUE}░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░${PURPLE}   ║"
+    echo " ║                                                      ║"
+    echo " ║         ${NEON_GREEN}JS Hunter v3.1 - Crafted by Crypt Specter${PURPLE}    ║"
+    echo " ╚══════════════════════════════════════════════════════╝"
+    echo -e "${NC}"
+}
+
+header() {
+    echo -e "${ELECTRIC_BLUE}${BOLD}════════════════════════════════════════════════════════${NC}"
+    echo -e "${ELECTRIC_BLUE}${BOLD} ${UNDERLINE}${1}${NC}"
+    echo -e "${ELECTRIC_BLUE}${BOLD}════════════════════════════════════════════════════════${NC}"
+}
+
+stage() {
+    echo -e "\n${NEON_GREEN}${BOLD}┏━ ${SILVER}${1}${NC}"
+}
+
+substage() {
+    echo -e "${PURPLE}  ┣━ ${1}${NC}"
+}
+
+progress_bar() {
+    local pid=$1
+    local msg=$2
+    local width=40
+    local i=0
+    tput civis
+    while kill -0 "$pid" 2>/dev/null; do
+        printf "\r${DARK_GRAY}[%s%s]${NC} ${DARK_GRAY}${msg}...${NC}" $(printf '█%.0s' $(seq 1 $i)) $(printf ' %.0s' $(seq $((i+1)) $width))
+        i=$(( (i % width) + 1 ))
+        sleep 0.1
+    done
+    printf "\r${NEON_GREEN}[%s]${NC} ${NEON_GREEN}${msg} Complete.${NC}\n" $(printf '█%.0s' $(seq 1 $width))
+    tput cnorm
+}
+
+help_menu() {
+    header "JS Hunter - Command Guide"
+    echo -e "${PURPLE}Usage:${NC} $0 [options]\n"
+    echo -e "${ORANGE}Essential:${NC}"
+    echo -e "  -dl <file>      Input file with domains/subdomains (txt format)\n"
+    echo -e "${ORANGE}Optional:${NC}"
+    echo -e "  -o <file>       Output for consolidated JS URLs"
+    echo -e "  -s <file>       Output for detected secrets"
+    echo -e "  -e <file>       Output for extracted endpoints"
+    echo -e "  -lv <1-4>       Intensity level for discovery (default: 4)"
+    echo -e "  -h, --help      Display this guide\n"
+    echo -e "${NEON_GREEN}Sample Run:${NC} $0 -dl domains.txt -o js_urls.txt -s secrets.txt -e endpoints.txt -lv 3"
+    exit 0
+}
+
+error() {
+    echo -e "\n${CRIMSON}${BOLD}❌ Error: ${1}${NC}"
+    exit 1
+}
+
+warn() {
+    echo -e "${ORANGE}${BOLD}⚠ Warning: ${1}${NC}"
+}
+
+info() {
+    echo -e "${ELECTRIC_BLUE}ℹ ${1}${NC}"
+}
+
+confirm_overwrite() {
+    local file="$1"
+    if [[ -f "$file" ]]; then
+        read -p "${ORANGE}${BOLD}❓ Overwrite $file? (y/n): ${NC}" confirm
+        if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+            error "Operation aborted."
+        fi
+    fi
+}
+
+# Trap for cleanup
+trap 'rm -f "$DOMAINS" "$URLS" "$ALL_JS_URLS" "${results[@]}" 2>/dev/null' EXIT
+
+# --- Argument Parsing ---
+DOMAIN_LIST_INPUT=""
+JS_URLS_FILE=""
+SECRETS_FILE=""
+ENDPOINTS_FILE=""
+LEVEL=4
+
+while [[ $# -gt 0 ]]; do
+    key="$1"
+    case $key in
+        -dl|-o|-s|-e|-lv)
+            if [[ $# -lt 2 || "$2" == -* ]]; then
+                error "Missing value for option $key"
+            fi
+            value="$2"
+            shift 2
+            case $key in
+                -dl) DOMAIN_LIST_INPUT="$value" ;;
+                -o) JS_URLS_FILE="$value" ;;
+                -s) SECRETS_FILE="$value" ;;
+                -e) ENDPOINTS_FILE="$value" ;;
+                -lv) LEVEL="$value" ;;
+            esac
+            ;;
+        -h|--help) help_menu ;;
+        *) error "Invalid option: $1" ;;
+    esac
+done
+
+# --- Validation ---
+[[ -z "$DOMAIN_LIST_INPUT" ]] && error "Input file required. Use -dl <list.txt>"
+[[ ! -f "$DOMAIN_LIST_INPUT" ]] && error "File '$DOMAIN_LIST_INPUT' not found."
+[[ ! "$LEVEL" =~ ^[1-4]$ ]] && error "Level must be 1-4."
+
+# --- Dependency Check ---
+declare -A tools=(
+    [1]="subjs"
+    [2]="katana"
+    [3]="waybackurls"
+    [4]="gau"
+)
+
+dependencies=()
+for i in $(seq 1 "$LEVEL"); do
+    dependencies+=("${tools[$i]}")
+done
+
+[[ -n "$SECRETS_FILE" || -n "$ENDPOINTS_FILE" ]] && dependencies+=("nuclei")
+
+dependencies=($(echo "${dependencies[@]}" | tr ' ' '\n' | sort -u | tr '\n' ' '))
+
+for dep in "${dependencies[@]}"; do
+    command -v "$dep" &> /dev/null || error "Dependency missing: $dep. Install required."
+done
+
+# --- Overwrite Confirmation ---
+[[ -n "$JS_URLS_FILE" ]] && confirm_overwrite "$JS_URLS_FILE"
+[[ -n "$SECRETS_FILE" ]] && confirm_overwrite "$SECRETS_FILE"
+[[ -n "$ENDPOINTS_FILE" ]] && confirm_overwrite "$ENDPOINTS_FILE"
+
+# --- Main Execution ---
+clear
+banner
+
+start_time=$(date +%s)
+
+DOMAINS=$(mktemp)
+sed -E 's|^https?://||' "$DOMAIN_LIST_INPUT" | sort -u > "$DOMAINS"
+
+URLS=$(mktemp)
+awk '{print "https://" $0}' "$DOMAINS" > "$URLS"
+
+# User-Agent string
+UA="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36"
+
+# --- Discovery Phase ---
+stage "Phase 1: JavaScript URL Discovery (Intensity: $LEVEL)"
+declare -A pids
+declare -A results
+
+for i in $(seq 1 $LEVEL); do
+    tool=${tools[$i]}
+    results[$tool]=$(mktemp)
+
+    case $tool in
+        "subjs")
+            subjs -i "$URLS" -ua "$UA" > "${results[$tool]}" &
+            pids[$tool]=$!
+            ;;
+        "katana")
+            katana -list "$URLS" -jc -silent -user-agent "$UA" | grep -Ei '\.js([?#].*)?$' > "${results[$tool]}" &
+            pids[$tool]=$!
+            ;;
+        "waybackurls")
+            waybackurls < "$DOMAINS" | grep -Ei '\.js([?#].*)?$' > "${results[$tool]}" &
+            pids[$tool]=$!
+            ;;
+        "gau")
+            gau < "$DOMAINS" | grep -Ei '\.js([?#].*)?$' > "${results[$tool]}" &
+            pids[$tool]=$!
+            ;;
+    esac
+done
+
+for tool in "${!pids[@]}"; do
+    substage "Executing $tool"
+    progress_bar ${pids[$tool]} "Running $tool"
+    wait ${pids[$tool]}
+    exit_code=$?
+    if [[ $exit_code -ne 0 ]]; then
+        warn "$tool encountered an issue (code $exit_code). Review logs."
+    fi
+done
+
+echo -e "${NEON_GREEN}${BOLD}  ┗━ Discovery Phase Concluded.${NC}"
+for tool in "${!pids[@]}"; do
+    count=$(wc -l < "${results[$tool]}" | tr -d ' ')
+    printf "     ${PURPLE}➤ ${SILVER}%-15s${NC}: ${ORANGE}%s${NC} URLs detected\n" "$tool" "$count"
+done
+
+# --- Consolidation Phase ---
+stage "Phase 2: URL Consolidation & Validation"
+ALL_JS_URLS=$(mktemp)
+cat "${results[@]}" | sort -u > "$ALL_JS_URLS"
+total_js=$(wc -l < "$ALL_JS_URLS" | tr -d ' ')
+echo -e "${NEON_GREEN}${BOLD}  ┣━ Identified ${ORANGE}${total_js}${NEON_GREEN} distinct JS URLs.${NC}"
+SCAN_TARGETS="$ALL_JS_URLS"
+
+[[ $(wc -l < "$SCAN_TARGETS" | tr -d ' ') -eq 0 ]] && error "No viable JS files for scanning."
+
+if [[ -n "$JS_URLS_FILE" ]]; then
+    cp "$SCAN_TARGETS" "$JS_URLS_FILE"
+    info "Consolidated JS URLs exported to $JS_URLS_FILE"
+fi
+
+# --- Analysis Phase ---
+stage "Phase 3: Nuclei-Based Analysis"
+SECRETS_FOUND=0
+ENDPOINTS_FOUND=0
+
+if [[ -n "$SECRETS_FILE" ]]; then
+    substage "Detecting secrets"
+    nuclei -l "$SCAN_TARGETS" -t exposures/tokens/ -o "$SECRETS_FILE" -silent &
+    secrets_pid=$!
+    progress_bar $secrets_pid "Scanning secrets"
+    wait $secrets_pid
+    exit_code=$?
+    if [[ $exit_code -ne 0 ]]; then
+        warn "Secrets scan issue (code $exit_code). Review logs."
+    fi
+    if [[ -f "$SECRETS_FILE" ]]; then
+        SECRETS_FOUND=$(wc -l < "$SECRETS_FILE" | tr -d ' ')
+        if [[ $SECRETS_FOUND -eq 0 ]]; then
+            rm "$SECRETS_FILE"
+            SECRETS_FILE=""
+        fi
+    fi
+    echo -e "${NEON_GREEN}${BOLD}  ┗━ Secrets detection finished.${NC}"
+fi
+
+if [[ -n "$ENDPOINTS_FILE" ]]; then
+    substage "Extracting endpoints"
+    nuclei -l "$SCAN_TARGETS" -t javascript/ -o "$ENDPOINTS_FILE" -silent &
+    endpoints_pid=$!
+    progress_bar $endpoints_pid "Scanning endpoints"
+    wait $endpoints_pid
+    exit_code=$?
+    if [[ $exit_code -ne 0 ]]; then
+        warn "Endpoints scan issue (code $exit_code). Review logs."
+    fi
+    if [[ -f "$ENDPOINTS_FILE" ]]; then
+        ENDPOINTS_FOUND=$(wc -l < "$ENDPOINTS_FILE" | tr -d ' ')
+        if [[ $ENDPOINTS_FOUND -eq 0 ]]; then
+            rm "$ENDPOINTS_FILE"
+            ENDPOINTS_FILE=""
+        fi
+    fi
+    echo -e "${NEON_GREEN}${BOLD}  ┗━ Endpoints extraction finished.${NC}"
+fi
+
+# --- Summary ---
+end_time=$(date +%s)
+total_time=$((end_time - start_time))
+
+header "Hunt Results Overview"
+echo -e "${PURPLE}${BOLD}╔════════════════════════╦═════════════════════════╗${NC}"
+printf "${PURPLE}${BOLD}║${NC} ${ELECTRIC_BLUE}%-23s ${PURPLE}║${NC} ${SILVER}%-24s ${PURPLE}║${NC}\n" "Total Unique JS URLs" "$total_js"
+[[ -n "$JS_URLS_FILE" ]] && printf "${PURPLE}${BOLD}║${NC} ${ELECTRIC_BLUE}%-23s ${PURPLE}║${NC} ${ORANGE}%-24s ${PURPLE}║${NC}\n" "JS URLs File" "$JS_URLS_FILE"
+if [[ -n "$SECRETS_FILE" ]]; then
+    printf "${PURPLE}${BOLD}║${NC} ${ELECTRIC_BLUE}%-23s ${PURPLE}║${NC} ${SILVER}%-24s ${PURPLE}║${NC}\n" "Secrets Detected" "$SECRETS_FOUND"
+    printf "${PURPLE}${BOLD}║${NC} ${ELECTRIC_BLUE}%-23s ${PURPLE}║${NC} ${ORANGE}%-24s ${PURPLE}║${NC}\n" "Secrets File" "$SECRETS_FILE"
+else
+    printf "${PURPLE}${BOLD}║${NC} ${ELECTRIC_BLUE}%-23s ${PURPLE}║${NC} ${SILVER}%-24s ${PURPLE}║${NC}\n" "Secrets Detected" "0 (No file created)"
+fi
+if [[ -n "$ENDPOINTS_FILE" ]]; then
+    printf "${PURPLE}${BOLD}║${NC} ${ELECTRIC_BLUE}%-23s ${PURPLE}║${NC} ${SILVER}%-24s ${PURPLE}║${NC}\n" "Endpoints Extracted" "$ENDPOINTS_FOUND"
+    printf "${PURPLE}${BOLD}║${NC} ${ELECTRIC_BLUE}%-23s ${PURPLE}║${NC} ${ORANGE}%-24s ${PURPLE}║${NC}\n" "Endpoints File" "$ENDPOINTS_FILE"
+else
+    printf "${PURPLE}${BOLD}║${NC} ${ELECTRIC_BLUE}%-23s ${PURPLE}║${NC} ${SILVER}%-24s ${PURPLE}║${NC}\n" "Endpoints Extracted" "0 (No file created)"
+fi
+printf "${PURPLE}${BOLD}║${NC} ${ELECTRIC_BLUE}%-23s ${PURPLE}║${NC} ${SILVER}%-24s ${PURPLE}║${NC}\n" "Total Duration (sec)" "$total_time"
+echo -e "${PURPLE}${BOLD}╚════════════════════════╩═════════════════════════╝${NC}\n"
+
+info "Hunt concluded. Target acquired!"
