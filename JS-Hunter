@@ -18,7 +18,7 @@ banner() {
     echo "██╗  ██║╚════██║██╔══██║██║   ██║██║╚██╗██║   ██║   ██╔════╝██╔══██╗"
     echo "╚██████║███████║██║  ██║╚██████╔╝██║ ╚████║   ██║   ███████╗██║  ██║"
     echo " ╚═════╝╚══════╝╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═══╝   ╚═╝   ╚══════╝╚═╝  ╚═╝"
-    echo "                         by Crypt Specter V5.6"
+    echo "                         by Crypt Specter V5.7"
     echo -e "${NC}"
 }
 header() {
@@ -221,10 +221,6 @@ cat "${results[@]}" | sort -u > "$ALL_JS_URLS"
 total_js=$(wc -l < "$ALL_JS_URLS" | tr -d ' ')
 substage "Found $total_js unique JS URLs."
 [[ $total_js -eq 0 ]] && error "No JS URLs found"
-if [[ -n "$JS_URLS_FILE" ]]; then
-    cp "$ALL_JS_URLS" "$JS_URLS_FILE"
-    detail "Exported to $JS_URLS_FILE"
-fi
 # --- Live Filtering ---
 stage "Phase 3: Live URL Filtering"
 LIVE_JS=$(mktemp)
@@ -244,6 +240,10 @@ live_count=$(wc -l < "$LIVE_JS" | tr -d ' ')
 printf "\r${CYAN}┗━▶ Found $live_count live JS URLs (200 OK).${NC}\n"
 [[ $live_count -eq 0 ]] && warn "No live JS URLs found"
 SCAN_TARGETS="$LIVE_JS"
+if [[ -n "$JS_URLS_FILE" ]]; then
+    cp "$LIVE_JS" "$JS_URLS_FILE"
+    detail "Exported to $JS_URLS_FILE"
+fi
 # --- Analysis Phase ---
 SECRETS_FOUND=0
 VERIFIED_SECRETS_FOUND=0
@@ -310,7 +310,7 @@ if [[ -n "$endpoints_pid" ]]; then
     fi
     detail "Processing LinkFinder results"
     if [[ -n "$PATHS_FILE" ]]; then
-        grep -Eo '(^| )/[a-zA-Z0-9._/?=&%-]+' "$ENDPOINTS_TEMP" | sort -u > "$PATHS_FILE"
+      grep -Eo '(^| )/[a-zA-Z0-9._/?=&%-]+' "$ENDPOINTS_TEMP" | grep -viE '\.(js|css|png|jpg|jpeg|gif|svg|ico|woff2?|ttf|map)(\?|$)' | sort -u > "$PATHS_FILE"
         PATHS_FOUND=$(wc -l < "$PATHS_FILE" | tr -d ' ')
         detail "Paths found: $PATHS_FOUND"
         if [[ $PATHS_FOUND -eq 0 ]]; then
