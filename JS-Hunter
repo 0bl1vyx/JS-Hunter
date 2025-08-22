@@ -15,8 +15,8 @@ banner() {
     echo "     ██╗███████╗██╗  ██╗██╗   ██╗███╗   ██║████████╗███████╗██████╗ "
     echo "     ██║██╔════╝██║  ██║██║   ██║████╗  ██║╚══██╔══╝██╔════╝██╔══██╗"
     echo "     ██║███████╗███████║██║   ██║██╔██╗ ██║   ██║   ███████╗██████╔╝"
-    echo "██╗  ██║╚════██║██╔══██║██║   ██║██║╚██╗██║   ██║   ██╔═══╝ ██╔══██╗"
-    echo "╚██████║███████║██║  ██║╚██████╔╝██║ ╚████║   ██║   ███████╗██║  ██╗"
+    echo "██╗  ██║╚════██║██╔══██║██║   ██║██║╚██╗██║   ██║   ██╔════╝██╔══██╗"
+    echo "╚██████║███████║██║  ██║╚██████╔╝██║ ╚████║   ██║   ███████╗██║  ██║"
     echo " ╚═════╝╚══════╝╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═══╝   ╚═╝   ╚══════╝╚═╝  ╚═╝"
     echo "                         by Crypt Specter V5.6"
     echo -e "${NC}"
@@ -171,13 +171,13 @@ for i in $(seq 1 $LEVEL); do
             subjs -i "$URLS" -ua "$UA" -c "$CONCURRENCY" > "${results[$tool]}" &
             ;;
         "katana")
-            cat "$URLS" | xargs -P "$CONCURRENCY" -I {} sh -c "katana -u {} -jc -silent -H 'User-Agent: $UA' | grep -Ei '\.js([?#].*)?\$' >> '${results[$tool]}'" &
+            cat "$URLS" | xargs -P "$CONCURRENCY" -I {} sh -c "katana -u {} -jc -silent -H 'User-Agent: $UA' | grep -Ei '\.js([?#].*)?\$' >> '${results[$tool]}' || true" &
             ;;
         "waybackurls")
-            cat "$DOMAINS" | xargs -P "$CONCURRENCY" -I {} sh -c "waybackurls {} | grep -Ei '\.js([?#].*)?\$' >> '${results[$tool]}'" &
+            cat "$DOMAINS" | xargs -P "$CONCURRENCY" -I {} sh -c "waybackurls {} | grep -Ei '\.js([?#].*)?\$' >> '${results[$tool]}' || true" &
             ;;
         "gau")
-            cat "$DOMAINS" | xargs -P "$CONCURRENCY" -I {} sh -c "gau {} | grep -Ei '\.js([?#].*)?\$' >> '${results[$tool]}'" &
+            cat "$DOMAINS" | xargs -P "$CONCURRENCY" -I {} sh -c "gau {} 2>/dev/null | grep -Ei '\.js([?#].*)?\$' >> '${results[$tool]}' || true" &
             ;;
     esac
     pids[$tool]=$!
