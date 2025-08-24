@@ -342,6 +342,7 @@ if [[ -n "$VERIFIED_SECRETS_FILE" && -n "$SECRETS_FILE" ]]; then
         ["stripe_standard_api"]="curl -s -f -u \"{SECRET}:\" \"https://api.stripe.com/v1/balance\""
         ["stripe_restricted_api"]="curl -s -f -u \"{SECRET}:\" \"https://api.stripe.com/v1/balance\""
         ["github_access_token"]="curl -s -f -H \"Authorization: token {SECRET}\" \"https://api.github.com/user\""
+        ["heroku_api_key"]="curl -s -f -X GET \"https://api.heroku.com/account\" -H \"Accept: application/vnd.heroku+json; version=3\" -H \"Authorization: Bearer {SECRET}\""
     )
     SECRETS_LIST=$(mktemp)
     for type in "${!secret_commands[@]}"; do
@@ -365,6 +366,7 @@ if [[ -n "$VERIFIED_SECRETS_FILE" && -n "$SECRETS_FILE" ]]; then
                 stripe_standard_api) cmd="curl -s -f -u \"$secret:\" \"https://api.stripe.com/v1/balance\"" ;;
                 stripe_restricted_api) cmd="curl -s -f -u \"$secret:\" \"https://api.stripe.com/v1/balance\"" ;;
                 github_access_token) cmd="curl -s -f -H \"Authorization: token $secret\" \"https://api.github.com/user\"" ;;
+                heroku_api_key) cmd="curl -s -f -X GET \"https://api.heroku.com/account\" -H \"Accept: application/vnd.heroku+json; version=3\" -H \"Authorization: Bearer $secret\"" ;;
             esac
             if eval "$cmd" > /dev/null 2>&1; then
                 echo "$type: $secret (verified)"
