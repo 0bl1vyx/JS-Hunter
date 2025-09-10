@@ -56,14 +56,6 @@ The script dynamically checks for required dependencies based on your options an
    go install github.com/lc/gau/v2/cmd/gau@latest
    go install github.com/tomnomnom/waybackurls@latest
 
-
-   git clone https://github.com/m4ll0k/SecretFinder.git
-   cd SecretFinder
-   pip3 install -r requirements.txt
-   sudo ln -s $(pwd)/SecretFinder.py /usr/local/bin/secretfinder
-   sudo chmod +x /usr/local/bin/secretfinder
-
-
    git clone https://github.com/GerbenJavado/LinkFinder.git
    cd LinkFinder
    pip3 install -r requirements.txt
