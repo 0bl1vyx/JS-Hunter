@@ -12,13 +12,13 @@ NC=$(tput sgr0) # No Color
 # --- UI Functions ---
 banner() {
     echo -e "${HACKER_GREEN}${BOLD}"
-    echo "     ██╗███████╗██╗  ██╗██╗   ██╗███╗   ██║████████╗███████╗██████╗ "
+    echo "     ██╗███████╗██╗  ██╗██╗   ██║███╗   ██║████████╗███████╗██████╗ "
     echo "     ██║██╔════╝██║  ██║██║   ██║████╗  ██║╚══██╔══╝██╔════╝██╔══██╗"
     echo "     ██║███████╗███████║██║   ██║██╔██╗ ██║   ██║   ███████╗██████╔╝"
     echo "██╗  ██║╚════██║██╔══██║██║   ██║██║╚██╗██║   ██║   ██╔════╝██╔══██╗"
     echo "╚██████║███████║██║  ██║╚██████╔╝██║ ╚████║   ██║   ███████╗██║  ██║"
     echo " ╚═════╝╚══════╝╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═══╝   ╚═╝   ╚══════╝╚═╝  ╚═╝"
-    echo "                         by Crypt Specter V5.7"
+    echo "                         by Crypt Specter V5.9"
     echo -e "${NC}"
 }
 header() {
@@ -129,7 +129,6 @@ dependencies=("httpx")
 for i in $(seq 1 "$LEVEL"); do
     dependencies+=("${tools[$i]}")
 done
-[[ -n "$SECRETS_FILE" ]] && dependencies+=("secretfinder")
 [[ -n "$PATHS_FILE" || -n "$LINKS_FILE" ]] && dependencies+=("linkfinder")
 dependencies=($(echo "${dependencies[@]}" | tr ' ' '\n' | sort -u | tr '\n' ' '))
 for dep in "${dependencies[@]}"; do
@@ -224,7 +223,7 @@ substage "Found $total_js unique JS URLs."
 # --- Live Filtering ---
 stage "Phase 3: Live URL Filtering"
 LIVE_JS=$(mktemp)
-httpx -l "$ALL_JS_URLS" -silent -mc 200 -o "$LIVE_JS" &
+httpx -l "$ALL_JS_URLS" -silent -mc 200 -o "$LIVE_JS" > /dev/null 2>&1 &
 httpx_pid=$!
 # Spinner animation
 printf "${CYAN}┗━▶ Filtering in Progress...${NC} "
@@ -257,17 +256,40 @@ if [[ -n "$SECRETS_FILE" || -n "$PATHS_FILE" || -n "$LINKS_FILE" ]]; then
     stage "Phase 4: Analysis Phase"
 fi
 if [[ -n "$SECRETS_FILE" ]]; then
-    detail "Scanning for secrets with SecretFinder"
+    detail "Scanning for secrets with custom regexes (streaming)"
     > "$SECRETS_FILE"
-    cat "$SCAN_TARGETS" | xargs -P "$CONCURRENCY" -I {} sh -c 'echo "[+] Scanning: {}" >> '"\"$SECRETS_FILE\";"' secretfinder -i "{}" -o cli >> '"\"$SECRETS_FILE\";"' echo -e "\n-----------------------------\n" >> '"\"$SECRETS_FILE\"" &
+    cat "$SCAN_TARGETS" | xargs -P "$CONCURRENCY" -I {} bash -c '
+        url="$1"
+        echo "[+] Scanning: $url" >> "'"$SECRETS_FILE"'"
+        content=$(curl -s -A "'"$UA"'" "$url")
+        declare -A regexes
+        regexes[slack_token]="[\"'\'']?(xox[bapso]-[0-9]{12}-[0-9]{12}-[0-9]{12}-[a-z0-9]{32})[\"'\'']?"
+        regexes[facebook_access_token]="[\"'\'']?EAACEdEose0cBA[A-Za-z0-9]+[\"'\'']?"
+        regexes[github_personal_access_token]="([gGhHuUbB]{6,8})?.*[\"'\'']\\K(gh[pousr]?_[0-9a-zA-Z]{36})[\"'\'']?"
+        regexes[google_api_key]="[\"'\'']?AIza[0-9A-Za-z\\-_]{35}[\"'\'']?"
+        regexes[twilio_auth_token]="(?i)twilio.*[\"'\'']\\K[0-9a-f]{32}[\"'\'']?"
+        regexes[aws_access_key_id]="[\"'\'']?AKIA[0-9A-Z]{16}[\"'\'']?"
+        regexes[cloudflare_api_token]="(?i)cloudflare.*[\"'\'']\\K[a-z0-9]{24,}[\"'\'']?"
+        regexes[firebase_database_url]="https?://([a-z0-9-]+\\.firebaseio\\.com|([a-z0-9-]+\\.)?firebasedatabase\\.app)/"
+        regexes[datadog_api_key]="(?i)datadog.*[\"'\'']\\K[a-f0-9]{32}-[a-f0-9]{8}[\"'\'']?"
+        regexes[browserstack_access_key]="(?i)browserstack.*[\"'\'']\\K[a-zA-Z0-9_-]{40}[\"'\'']?"
+        regexes[asana_access_token]="[\"'\'']?([0-9]{8}:[a-zA-Z0-9]{84})[\"'\'']?"
+        for type in "${!regexes[@]}"; do
+            echo "$content" | grep -ioP "${regexes[$type]}" | sed "s/^[\"'\'']//; s/[\"'\'']$//" | sort -u | sed "s/^/${type}: /" >> "'"$SECRETS_FILE"'"
+        done
+        echo -e "\n-----------------------------\n" >> "'"$SECRETS_FILE"'"
+    ' bash {} &
     secrets_pid=$!
-    detail "SecretFinder PID: $secrets_pid"
+    detail "Secrets scan PID: $secrets_pid"
 fi
 if [[ -n "$PATHS_FILE" || -n "$LINKS_FILE" ]]; then
     detail "Scanning for endpoints with LinkFinder"
     ENDPOINTS_TEMP=$(mktemp)
     > "$ENDPOINTS_TEMP"
-    cat "$SCAN_TARGETS" | xargs -P "$CONCURRENCY" -I {} sh -c 'echo "[*] Scanning: {}" >> '"\"$ENDPOINTS_TEMP\";"' linkfinder -i "{}" -o cli >> '"\"$ENDPOINTS_TEMP\"" &
+    cat "$SCAN_TARGETS" | xargs -P "$CONCURRENCY" -I {} bash -c '
+        echo "[*] Scanning: $0" >> "'"$ENDPOINTS_TEMP"'"
+        linkfinder -i "$0" -o cli >> "'"$ENDPOINTS_TEMP"'"
+    ' {} &
     endpoints_pid=$!
     detail "LinkFinder PID: $endpoints_pid"
 fi
@@ -294,7 +316,7 @@ if [[ -n "$secrets_pid" ]]; then
     if [[ $exit_code -ne 0 ]]; then
         warn "Secrets scan failed (code $exit_code)"
     fi
-    SECRETS_FOUND=$(wc -l < "$SECRETS_FILE" | tr -d ' ')
+    SECRETS_FOUND=$(grep -Ec '^[a-z_]+: ' "$SECRETS_FILE" | tr -d ' \n')
     detail "Secrets found: $SECRETS_FOUND"
     if [[ $SECRETS_FOUND -eq 0 ]]; then
         rm "$SECRETS_FILE"
@@ -330,28 +352,24 @@ if [[ -n "$endpoints_pid" ]]; then
         fi
     fi
 fi
+# Handle verified if no secrets
+if [[ -z "$SECRETS_FILE" && -n "$VERIFIED_SECRETS_FILE" ]]; then
+    rm -f "$VERIFIED_SECRETS_FILE" 2>/dev/null
+    VERIFIED_SECRETS_FILE=""
+    VERIFIED_SECRETS_FOUND=0
+    detail "No secrets to verify; cleaned verified file"
+fi
 # --- Verification Phase ---
 if [[ -n "$VERIFIED_SECRETS_FILE" && -n "$SECRETS_FILE" ]]; then
     stage "Phase 4.1: Verifying Secrets"
     > "$VERIFIED_SECRETS_FILE"
-    declare -A secret_commands=(
-        ["google_oauth"]="curl -s -f \"https://oauth2.googleapis.com/tokeninfo?access_token={SECRET}\""
-        ["facebook_access_token"]="curl -s -f \"https://graph.facebook.com/me?access_token={SECRET}\""
-        ["mailgun_api_key"]="curl -s -f --user \"api:{SECRET}\" \"https://api.mailgun.net/v3/domains\""
-        ["square_access_token"]="curl -s -f -H \"Authorization: Bearer {SECRET}\" \"https://connect.squareup.com/v2/locations\""
-        ["stripe_standard_api"]="curl -s -f -u \"{SECRET}:\" \"https://api.stripe.com/v1/balance\""
-        ["stripe_restricted_api"]="curl -s -f -u \"{SECRET}:\" \"https://api.stripe.com/v1/balance\""
-        ["github_access_token"]="curl -s -f -H \"Authorization: token {SECRET}\" \"https://api.github.com/user\""
-        ["heroku_api_key"]="curl -s -f -X GET \"https://api.heroku.com/account\" -H \"Accept: application/vnd.heroku+json; version=3\" -H \"Authorization: Bearer {SECRET}\""
-    )
     SECRETS_LIST=$(mktemp)
-    for type in "${!secret_commands[@]}"; do
-        grep -i "$type" "$SECRETS_FILE" | while read -r line; do
-            secret=$(echo "$line" | sed -E 's/.*: *//' | tr -d '[:space:]')
-            if [[ -n "$secret" ]]; then
-                echo "$type $secret" >> "$SECRETS_LIST"
-            fi
-        done
+    grep -E '^(slack_token|facebook_access_token|github_personal_access_token|google_api_key|cloudflare_api_token|firebase_database_url|datadog_api_key|browserstack_access_key|asana_access_token):' "$SECRETS_FILE" | while read -r line; do
+        type=$(echo "$line" | cut -d: -f1 | tr -d ' ')
+        secret=$(echo "$line" | cut -d: -f2- | sed 's/^[ \t]*//;s/[ \t]*$//')
+        if [[ -n "$secret" ]]; then
+            echo "$type $secret" >> "$SECRETS_LIST"
+        fi
     done
     total_secrets=$(wc -l < "$SECRETS_LIST" | tr -d ' ')
     if [[ $total_secrets -gt 0 ]]; then
@@ -359,19 +377,49 @@ if [[ -n "$VERIFIED_SECRETS_FILE" && -n "$SECRETS_FILE" ]]; then
         cat "$SECRETS_LIST" | xargs -P "$CONCURRENCY" -n 2 sh -c '
             type=$1; secret=$2
             case "$type" in
-                google_oauth) cmd="curl -s -f \"https://oauth2.googleapis.com/tokeninfo?access_token=$secret\"" ;;
-                facebook_access_token) cmd="curl -s -f \"https://graph.facebook.com/me?access_token=$secret\"" ;;
-                mailgun_api_key) cmd="curl -s -f --user \"api:$secret\" \"https://api.mailgun.net/v3/domains\"" ;;
-                square_access_token) cmd="curl -s -f -H \"Authorization: Bearer $secret\" \"https://connect.squareup.com/v2/locations\"" ;;
-                stripe_standard_api) cmd="curl -s -f -u \"$secret:\" \"https://api.stripe.com/v1/balance\"" ;;
-                stripe_restricted_api) cmd="curl -s -f -u \"$secret:\" \"https://api.stripe.com/v1/balance\"" ;;
-                github_access_token) cmd="curl -s -f -H \"Authorization: token $secret\" \"https://api.github.com/user\"" ;;
-                heroku_api_key) cmd="curl -s -f -X GET \"https://api.heroku.com/account\" -H \"Accept: application/vnd.heroku+json; version=3\" -H \"Authorization: Bearer $secret\"" ;;
+                slack_token)
+                    cmd="curl -s -X POST \"https://slack.com/api/auth.test\" -H \"Authorization: Bearer $secret\""
+                    check="{\"ok\":true"
+                    ;;
+                facebook_access_token)
+                    cmd="curl -s \"https://graph.facebook.com/me?access_token=$secret\""
+                    check="\"id\":"
+                    ;;
+                github_personal_access_token)
+                    cmd="curl -s -H \"Authorization: token $secret\" \"https://api.github.com/user\""
+                    check="\"login\":"
+                    ;;
+                google_api_key)
+                    cmd="curl -s \"https://www.googleapis.com/discovery/v1/apis?key=$secret\""
+                    check="\"kind\":\"DiscoveryDocument"
+                    ;;
+                cloudflare_api_token)
+                    cmd="curl -s -X GET \"https://api.cloudflare.com/client/v4/user/tokens/verify\" -H \"Authorization: Bearer $secret\" -H \"Content-Type: application/json\""
+                    check="\"success\":true"
+                    ;;
+                firebase_database_url)
+                    cmd="curl -s \"$secret.json?auth=dev\""
+                    check="^{\\""
+                    ;;
+                datadog_api_key)
+                    cmd="curl -s -H \"DD-API-KEY: $secret\" \"https://api.datadoghq.com/api/v1/validate\""
+                    check="\"valid\":true"
+                    ;;
+                browserstack_access_key)
+                    cmd="curl -s -u \"$secret:unused\" \"https://api.browserstack.com/automate/users.json\""
+                    check="\"hashed_id\":"
+                    ;;
+                asana_access_token)
+                    cmd="curl -s -H \"Authorization: Bearer $secret\" \"https://app.asana.com/api/1.0/users/me\""
+                    check="\"gid\":"
+                    ;;
+                *) exit 0 ;;
             esac
-            if eval "$cmd" > /dev/null 2>&1; then
+            output=$(eval "$cmd")
+            if echo "$output" | grep -q "$check"; then
                 echo "$type: $secret (verified)"
             fi
-        ' -- >> "$VERIFIED_SECRETS_FILE" &
+        ' sh >> "$VERIFIED_SECRETS_FILE" &
         verification_pid=$!
         # Spinner animation
         printf "${CYAN}┗━▶ Verification in Progress...${NC} "
