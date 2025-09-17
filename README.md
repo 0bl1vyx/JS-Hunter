@@ -50,7 +50,7 @@ The script dynamically checks for required dependencies based on your options an
 3. Install dependencies (example for Go-based tools):
    ```
    go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest
-   go get -u -v github.com/lc/subjs@latest
+   go install -v github.com/lc/subjs@latest
    go install github.com/projectdiscovery/katana/cmd/katana@latest
    go install github.com/lc/gau/v2/cmd/gau@latest
    go install github.com/tomnomnom/waybackurls@latest
