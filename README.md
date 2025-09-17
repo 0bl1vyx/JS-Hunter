@@ -39,8 +39,7 @@ The script dynamically checks for required dependencies based on your options an
 
 1. Clone the repository:
    ```
-   git clone https://github.com/cryptspecter/JS-Hunter.git
-   cd JS-Hunter
+   wget https://raw.githubusercontent.com/0bl1vyx/JS-Hunter/refs/heads/main/JS-Hunter
    ```
 
 2. Make the script executable:
