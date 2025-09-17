@@ -50,10 +50,14 @@ The script dynamically checks for required dependencies based on your options an
 3. Install dependencies (example for Go-based tools):
    ```
    go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest
-   go install -v github.com/lc/subjs@latest
    go install github.com/projectdiscovery/katana/cmd/katana@latest
    go install github.com/lc/gau/v2/cmd/gau@latest
    go install github.com/tomnomnom/waybackurls@latest
+
+   git clone https://github.com/lc/subjs
+   cd subjs
+   sudo go build
+   sudo mv subjs /usr/local/bin
 
    git clone https://github.com/GerbenJavado/LinkFinder.git
    cd LinkFinder
