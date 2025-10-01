@@ -1,147 +1,115 @@
-# JS-Hunter
+# JS-Hunter v6.1
 
-![JS-Hunter Banner](https://img.shields.io/badge/Version-5.7-brightgreen?style=flat-square) ![License](https://img.shields.io/badge/License-MIT-blue?style=flat-square) ![Language](https://img.shields.io/badge/Language-Bash-yellow?style=flat-square)
+**JS-Hunter** is a blazing-fast, dependency-light Bash script for comprehensive JavaScript reconnaissance. It automates the discovery of JS files from multiple sources, then uses a powerful native regex engine to extract secrets, API endpoints, and external links—all without relying on external Python tools for analysis.
 
-A powerful, hacker-themed Bash tool for discovering JavaScript files from a list of domains, analyzing them for secrets, paths, and links, and optionally verifying extracted secrets. Inspired by the Matrix aesthetic, JS-Hunter combines multiple reconnaissance tools for efficient bug bounty hunting, security research, and web asset enumeration.
+Designed with a hacker-themed, Matrix-inspired UI, JS-Hunter is the perfect companion for bug bounty hunters, penetration testers, and security researchers looking to streamline their web asset discovery and analysis workflow.
 
-Built by **Crypt Specter**. Version 5.7.
+## ✨ Key Features
 
-## Features
+  * **Multi-Source JS Discovery**: Aggregates JS files from up to 4 different strategies (`subjs`, `katana`, `waybackurls`, `gau`) for maximum coverage.
+  * **Blazing-Fast Native Analysis**: Scans files for secrets, paths, and links using a highly efficient, built-in regex engine—no more `linkfinder` or Python dependencies\!
+  * **Secret Verification**: Automatically validates discovered API keys for services like GitHub, Slack, Google, and more, separating real threats from false positives.
+  * **Dependency-Light**: The core analysis engine is 100% native Bash. You only need the Go-based discovery tools you choose to use.
+  * **Advanced Concurrency**: Processes multiple domains and URLs in parallel to get you results in a fraction of the time.
+  * **Flexible Output**: Save JS URLs, secrets, verified secrets, paths, and links to separate, neatly organized files.
+  * **Hacker-Ready UI**: A clean, minimalist interface with banners, spinners, and color-coded output that makes reconnaissance feel like you're in the Matrix.
+  * **Safe & Smart**: Includes automatic dependency checks, confirmation prompts before overwriting files, and robust cleanup of temporary files.
 
-- **Multi-Level JS Discovery**: Choose from 1 to 4 levels of depth using tools like `subjs`, `katana`, `waybackurls`, and `gau` to uncover JS files from live sites, archives, and crawls.
-- **Live URL Filtering**: Uses `httpx` to verify only responsive (200 OK) JS URLs.
-- **Secret Extraction**: Scans JS files for sensitive data (e.g., API keys, tokens) using `secretfinder`.
-- **Endpoint and Link Discovery**: Extracts relative paths and absolute links from JS files with `linkfinder`.
-- **Secret Verification**: Automatically checks validity of common secrets (e.g., Google OAuth, Stripe, GitHub tokens) via API calls.
-- **Concurrency Control**: Adjustable parallel processing for faster scans.
-- **Verbose Mode**: Detailed output for debugging and insights.
-- **Hacker UI**: Minimalist, green-themed interface with spinners, banners, and progress indicators.
-- **Output Flexibility**: Save results to custom files for JS URLs, secrets, verified secrets, paths, and links.
-- **Safety Features**: Overwrite confirmation, dependency checks, and temporary file cleanup.
+-----
 
-## Dependencies
+## ⚙️ Workflow
 
-JS-Hunter relies on the following external tools. Install them via your package manager (e.g., `go install`, `apt`, or `brew`) before running:
-
-- `httpx` (required for live filtering)
-- `subjs` (Level 1 discovery)
-- `katana` (Level 2 discovery)
-- `waybackurls` (Level 3 discovery)
-- `gau` (Level 4 discovery)
-- (for secret extraction, if `-s` is used)
-- (for path/link extraction, if `-p` or `-l` is used)
-
-The script dynamically checks for required dependencies based on your options and exits if any are missing.
-
-**Note**: No internet access is needed beyond the tools themselves. Ensure tools are in your `$PATH`.
-
-## Installation
-
-1. Clone the repository:
-   ```
-   wget https://raw.githubusercontent.com/0bl1vyx/JS-Hunter/refs/heads/main/JS-Hunter
-   ```
-
-2. Make the script executable:
-   ```
-   chmod +x JS-Hunter
-   ```
-
-3. Install dependencies (example for Go-based tools):
-   ```
-   go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest
-   go install github.com/projectdiscovery/katana/cmd/katana@latest
-   go install github.com/lc/gau/v2/cmd/gau@latest
-   go install github.com/tomnomnom/waybackurls@latest
-
-   git clone https://github.com/lc/subjs
-   cd subjs
-   sudo go build
-   sudo mv subjs /usr/local/bin
-   ```
-
-   Adjust based on your OS and preferred installation method.
-
-## Usage
-
-Run the script with your domain list and desired options:
+The tool follows a simple but powerful 4-stage workflow:
 
 ```
-./JS-Hunter [options]
+            ┌────────────────┐     ┌───────────────┐     ┌────────────────┐     ┌──────────┐
+Input List ─►│ 1. Discover JS ├─►─► │ 2. Consolidate├─►─► │  3. Analyze    ├─►─► │ 4. Output│
+(domains.txt)│ (subjs, gau...)│     │ (Unique URLs) │     │ (Regex Engine) │     │ (files)  │
+            └────────────────┘     └───────────────┘     └────────────────┘     └──────────┘
 ```
 
-### Essential Options
-- `-dl <file>`: Input file containing a list of domains (one per line, e.g., `domains.txt`).
+-----
 
-### Optional Options
-- `-o <file>`: Output file for discovered JS URLs (e.g., `js.txt`).
-- `-s <file>`: Output file for extracted secrets (e.g., `secrets.txt`).
-- `-cs <file>`: Output file for verified secrets (requires `-s`, e.g., `verified.txt`).
-- `-p <file>`: Output file for extracted paths (e.g., `paths.txt`).
-- `-l <file>`: Output file for extracted links (e.g., `links.txt`).
-- `-lv <1-4>`: Discovery level (1: basic, 4: comprehensive; default: 4).
-- `-c <num>`: Concurrency level for parallel processing (default: 4).
-- `-v`: Enable verbose output for extra details.
-- `-h, --help`: Display the help menu.
+## 📦 Installation
 
-The script will prompt for confirmation before overwriting existing output files.
+1.  **Download the script directly**
 
-### Example
+    ```bash
+    wget https://raw.githubusercontent.com/0bl1vyx/JS-Hunter/refs/heads/main/JS-Hunter
+    ```
 
-Basic scan for JS URLs at level 2 with concurrency 8:
-```
-./JS-Hunter -dl domains.txt -o js.txt -lv 2 -c 8
-```
+2.  **Make the script executable:**
 
-Full analysis with secrets, verification, paths, links, and verbose mode:
-```
-./JS-Hunter -dl domains.txt -o js.txt -s secrets.txt -cs verified.txt -p paths.txt -l links.txt -lv 4 -c 8 -v
-```
+    ```bash
+    chmod +x JS-Hunter
+    ```
 
-Input `domains.txt` example:
-```
-example.com
-sub.example.com
-```
+3.  **Install Dependencies:**
+    JS-Hunter's core analysis engine is dependency-free. You only need to install the discovery tools based on the `-lv` (level) you intend to use.
 
-## How It Works
+    ```bash
+    # (Required for Level 1)
+    go install -v github.com/lc/subjs@latest
 
-1. **Discovery Phase**: Gathers JS URLs using selected tools based on level.
-2. **Consolidation**: Merges and deduplicates URLs.
-3. **Live Filtering**: Checks for 200 OK responses.
-4. **Analysis Phase**: Scans for secrets, paths, and links (if requested).
-5. **Verification Phase**: Tests secret validity for supported types (e.g., Google, Facebook, Stripe).
-6. **Summary**: Displays counts and exports results.
+    # (Required for Level 2)
+    go install -v github.com/projectdiscovery/katana/cmd/katana@latest
 
-Phases include progress spinners for a smooth CLI experience.
+    # (Required for Level 3)
+    go install -v github.com/tomnomnom/waybackurls@latest
 
-## Output Format
+    # (Required for Level 4 - Recommended for best results)
+    go install -v github.com/lc/gau/v2/cmd/gau@latest
+    ```
 
-- **JS URLs**: One URL per line.
-- **Secrets**: Tool output with separators between files.
-- **Verified Secrets**: Format like `type: secret (verified)`.
-- **Paths**: Relative paths (e.g., `/api/v1/user`).
-- **Links**: Absolute URLs (e.g., `https://api.example.com/endpoint`).
+    Ensure that your Go bin directory (`$HOME/go/bin`) is in your system's `$PATH`.
 
-Empty output files are automatically removed.
+-----
 
-## Limitations
+## 🚀 Usage
 
-- Relies on external tools; ensure they are up-to-date.
-- Secret verification is limited to specific types (Google OAuth, Facebook, Mailgun, Square, Stripe, GitHub).
-- No proxy support built-in; configure in underlying tools if needed.
-- Designed for ethical use only—respect robots.txt and legal boundaries.
+The script is controlled via simple command-line flags.
 
-## Contributing
+### **Options**
 
-Pull requests welcome! For major changes, open an issue first. Ensure code follows the hacker-minimalist style.
+| Flag | Argument | Description | Required |
+| :--- | :--- | :--- | :--- |
+| `-dl` | `<file>` | Input file containing a list of domains (one per line). | **Yes** |
+| `-o` | `<file>` | Output file to save all discovered JS URLs. | No |
+| `-s` | `<file>` | Output file to save discovered secrets. | No |
+| `-cs` | `<file>` | Output file to save **verified** secrets (requires `-s`). | No |
+| `-p` | `<file>` | Output file to save discovered paths/endpoints. | No |
+| `-l` | `<file>` | Output file to save discovered external links. | No |
+| `-lv` | `<1-4>` | Discovery level (default: 4). Higher is more thorough. | No |
+| `-c` | `<num>` | Concurrency level for parallel tasks (default: 4). | No |
+| `-v` | | Enable verbose mode for detailed execution logs. | No |
+| `-h` | | Display the help menu. | No |
 
-## License
+### **Examples**
 
-MIT License. See [LICENSE](LICENSE) for details.
+  * **Simple Scan:** Find JS files for a list of domains and print results to the terminal.
 
-## Author
+    ```bash
+    ./JS-Hunter -dl domains.txt
+    ```
 
-- **Crypt Specter** - [GitHub](https://github.com/cryptspecter)
+  * **Full Recon:** Use the highest discovery level, save all outputs, and verify secrets with high concurrency.
 
-Happy hunting! 🚀
+    ```bash
+    ./JS-Hunter -dl domains.txt -o js_urls.txt -s secrets.txt -cs verified_secrets.txt -p paths.txt -l links.txt -c 20
+    ```
+
+  * **Stealthy & Fast:** Use only Level 1 discovery (`subjs`) to quickly find secrets.
+
+    ```bash
+    ./JS-Hunter -dl domains.txt -lv 1 -s secrets.txt
+    ```
+
+-----
+
+## 🤝 Contributing
+
+Contributions, issues, and feature requests are welcome\! Feel free to check the [issues page](https://www.google.com/search?q=https://github.com/0bl1vyx/JS-Hunter/issues).
+
+## 📜 License
+
+This project is licensed under the MIT License. See the `LICENSE` file for details.
