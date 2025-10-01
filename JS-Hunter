@@ -9,16 +9,17 @@ WHITE=$(tput setaf 7) # Neutral text
 DIM=$(tput dim) # Subtle dim for details
 BOLD=$(tput bold)
 NC=$(tput sgr0) # No Color
+
 # --- UI Functions ---
 banner() {
     echo -e "${HACKER_GREEN}${BOLD}"
-    echo "     ██╗███████╗██╗  ██╗██╗   ██║███╗   ██║████████╗███████╗██████╗ "
-    echo "     ██║██╔════╝██║  ██║██║   ██║████╗  ██║╚══██╔══╝██╔════╝██╔══██╗"
-    echo "     ██║███████╗███████║██║   ██║██╔██╗ ██║   ██║   ███████╗██████╔╝"
+    echo "      ██╗███████╗██╗  ██╗██╗   ██║███╗   ██║████████╗███████╗██████╗ "
+    echo "      ██║██╔════╝██║  ██║██║   ██║████╗  ██║╚══██╔══╝██╔════╝██╔══██╗"
+    echo "      ██║███████╗███████║██║   ██║██╔██╗ ██║   ██║   ███████╗██████╔╝"
     echo "██╗  ██║╚════██║██╔══██║██║   ██║██║╚██╗██║   ██║   ██╔════╝██╔══██╗"
     echo "╚██████║███████║██║  ██║╚██████╔╝██║ ╚████║   ██║   ███████╗██║  ██║"
     echo " ╚═════╝╚══════╝╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═══╝   ╚═╝   ╚══════╝╚═╝  ╚═╝"
-    echo "                         by Crypt Specter V5.9"
+    echo "                                by Crypt Specter V6.1 (No-Filter Edition)"
     echo -e "${NC}"
 }
 header() {
@@ -35,7 +36,7 @@ tool_result() {
 }
 detail() {
     if [[ "$VERBOSE" == true ]]; then
-        echo -e "${DIM}   • ${1}${NC}"
+        echo -e "${DIM}    • ${1}${NC}"
     fi
 }
 help_menu() {
@@ -44,14 +45,14 @@ help_menu() {
     echo -e "${ORANGE}Essential:${NC}"
     echo -e " -dl <file> Domain list input (txt)"
     echo -e "${ORANGE}Optional:${NC}"
-    echo -e " -o <file> JS URLs output"
-    echo -e " -s <file> Secrets output"
+    echo -e " -o <file>  JS URLs output"
+    echo -e " -s <file>  Secrets output"
     echo -e " -cs <file> Verify secrets and save to file (requires -s)"
-    echo -e " -p <file> Paths output"
-    echo -e " -l <file> Links output"
-    echo -e " -lv <1-4> Discovery level (default: 4)"
-    echo -e " -c <num> Concurrency level (default: 4)"
-    echo -e " -v Verbose output (extra details)"
+    echo -e " -p <file>  Paths output"
+    echo -e " -l <file>  Links output"
+    echo -e " -lv <1-4>  Discovery level (default: 4)"
+    echo -e " -c <num>   Concurrency level (default: 4)"
+    echo -e " -v         Verbose output (extra details)"
     echo -e " -h, --help This guide\n"
     echo -e "${HACKER_GREEN}Example:${NC} $0 -dl domains.txt -o js.txt -s secrets.txt -cs verified.txt -p paths.txt -l links.txt -lv 2 -c 8 -v"
     exit 0
@@ -75,8 +76,10 @@ confirm_overwrite() {
         fi
     fi
 }
+
 # Trap for cleanup
-trap 'rm -f "$DOMAINS" "$URLS" "$ALL_JS_URLS" "$LIVE_JS" "${results[@]}" "$ENDPOINTS_TEMP" "$SECRETS_LIST" 2>/dev/null' EXIT
+trap 'rm -f "$DOMAINS" "$URLS" "$ALL_JS_URLS" "${results[@]}" "$ANALYSIS_RESULTS" "$SECRETS_LIST" 2>/dev/null' EXIT
+
 # --- Argument Parsing ---
 DOMAIN_LIST_INPUT=""
 JS_URLS_FILE=""
@@ -112,12 +115,14 @@ while [[ $# -gt 0 ]]; do
         *) error "Invalid option: $1" ;;
     esac
 done
+
 # --- Validation ---
 [[ -z "$DOMAIN_LIST_INPUT" ]] && error "Domain list required (-dl <file>)"
 [[ ! -f "$DOMAIN_LIST_INPUT" ]] && error "File '$DOMAIN_LIST_INPUT' not found"
 [[ ! "$LEVEL" =~ ^[1-4]$ ]] && error "Level must be 1-4"
 [[ ! "$CONCURRENCY" =~ ^[1-9][0-9]*$ ]] && error "Concurrency must be a positive integer"
 [[ -n "$VERIFIED_SECRETS_FILE" && -z "$SECRETS_FILE" ]] && error "-cs requires -s"
+
 # --- Dynamic Dependency Check ---
 declare -A tools=(
     [1]="subjs"
@@ -125,22 +130,24 @@ declare -A tools=(
     [3]="waybackurls"
     [4]="gau"
 )
-dependencies=("httpx")
+# httpx removed from this list
+dependencies=("curl" "grep" "sed" "sort" "wc" "awk" "tr")
 for i in $(seq 1 "$LEVEL"); do
     dependencies+=("${tools[$i]}")
 done
-[[ -n "$PATHS_FILE" || -n "$LINKS_FILE" ]] && dependencies+=("linkfinder")
 dependencies=($(echo "${dependencies[@]}" | tr ' ' '\n' | sort -u | tr '\n' ' '))
 for dep in "${dependencies[@]}"; do
     command -v "$dep" &> /dev/null || error "Missing: $dep"
 done
 detail "Dependencies checked: ${dependencies[*]}"
+
 # --- Overwrite Confirmation ---
 [[ -n "$JS_URLS_FILE" ]] && confirm_overwrite "$JS_URLS_FILE"
 [[ -n "$SECRETS_FILE" ]] && confirm_overwrite "$SECRETS_FILE"
 [[ -n "$VERIFIED_SECRETS_FILE" ]] && confirm_overwrite "$VERIFIED_SECRETS_FILE"
 [[ -n "$PATHS_FILE" ]] && confirm_overwrite "$PATHS_FILE"
 [[ -n "$LINKS_FILE" ]] && confirm_overwrite "$LINKS_FILE"
+
 # --- Main Execution ---
 clear
 banner
@@ -154,8 +161,10 @@ awk '{print "https://" $0}' "$DOMAINS" > "$URLS"
 detail "URLs ready for scanning"
 UA="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36"
 detail "User-Agent set: $UA"
+
 # --- Spinner Frames ---
 SPINNER_FRAMES='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+
 # --- Discovery Phase ---
 stage "Phase 1: Discovering JavaScript URLs (Level: $LEVEL)"
 declare -A pids
@@ -198,7 +207,7 @@ while true; do
     spinner_i=$((spinner_i + 1))
     sleep 0.1
 done
-printf "\r${CYAN}┗━▶ Discovery Complete.      ${NC}\n"
+printf "\r${CYAN}┗━▶ Discovery Complete.        ${NC}\n"
 # Check exit codes
 for tool in "${!pids[@]}"; do
     wait "${pids[$tool]}"
@@ -212,127 +221,121 @@ done
 for tool in "${!results[@]}"; do
     tool_result "$tool : $(wc -l < "${results[$tool]}") URLs found"
 done
+
 # --- Consolidation Phase ---
-stage "Phase 2: Consolidating and Filtering URLs"
+stage "Phase 2: Consolidating URLs"
 ALL_JS_URLS=$(mktemp)
 detail "Merging results into: $ALL_JS_URLS"
 cat "${results[@]}" | sort -u > "$ALL_JS_URLS"
 total_js=$(wc -l < "$ALL_JS_URLS" | tr -d ' ')
 substage "Found $total_js unique JS URLs."
 [[ $total_js -eq 0 ]] && error "No JS URLs found"
-# --- Live Filtering ---
-stage "Phase 3: Live URL Filtering"
-LIVE_JS=$(mktemp)
-httpx -l "$ALL_JS_URLS" -silent -mc 200 -o "$LIVE_JS" > /dev/null 2>&1 &
-httpx_pid=$!
-# Spinner animation
-printf "${CYAN}┗━▶ Filtering in Progress...${NC} "
-spinner_i=0
-while kill -0 "$httpx_pid" 2>/dev/null; do
-    spinner_char="${SPINNER_FRAMES:$((spinner_i % ${#SPINNER_FRAMES})):1}"
-    printf "\r${CYAN}┗━▶ Filtering in Progress... $spinner_char${NC} "
-    spinner_i=$((spinner_i + 1))
-    sleep 0.1
-done
-wait "$httpx_pid"
-live_count=$(wc -l < "$LIVE_JS" | tr -d ' ')
-printf "\r${CYAN}┗━▶ Found $live_count live JS URLs (200 OK).${NC}\n"
-[[ $live_count -eq 0 ]] && warn "No live JS URLs found"
-SCAN_TARGETS="$LIVE_JS"
+
+# --- Prepare for Analysis ---
+# Skipping live URL check. All found URLs will be analyzed directly.
+SCAN_TARGETS="$ALL_JS_URLS"
+urls_for_analysis=$total_js
+substage "Analyzing all $urls_for_analysis URLs."
+
 if [[ -n "$JS_URLS_FILE" ]]; then
-    cp "$LIVE_JS" "$JS_URLS_FILE"
-    detail "Exported to $JS_URLS_FILE"
+    cp "$ALL_JS_URLS" "$JS_URLS_FILE"
+    detail "Exported all unique JS URLs to $JS_URLS_FILE"
 fi
+
 # --- Analysis Phase ---
+stage "Phase 3: Analysis Phase (Native)"
 SECRETS_FOUND=0
 VERIFIED_SECRETS_FOUND=0
 PATHS_FOUND=0
 LINKS_FOUND=0
-secrets_pid=""
-endpoints_pid=""
-ENDPOINTS_TEMP=""
 SECRETS_LIST=""
-if [[ -n "$SECRETS_FILE" || -n "$PATHS_FILE" || -n "$LINKS_FILE" ]]; then
-    stage "Phase 4: Analysis Phase"
-fi
-if [[ -n "$SECRETS_FILE" ]]; then
-    detail "Scanning for secrets with custom regexes (streaming)"
-    > "$SECRETS_FILE"
-    cat "$SCAN_TARGETS" | xargs -P "$CONCURRENCY" -I {} bash -c '
-        url="$1"
-        echo "[+] Scanning: $url" >> "'"$SECRETS_FILE"'"
-        content=$(curl -s -A "'"$UA"'" "$url")
+
+# This function is exported and run in parallel for each URL.
+# It fetches the URL content once and scans for secrets, paths, and links.
+process_js_url() {
+    local url="$1"
+    # Using --connect-timeout to prevent hanging, -L to follow redirects
+    local content
+    content=$(curl --connect-timeout 5 -s -L -A "$UA" "$url")
+
+    # Exit if content is empty
+    if [[ -z "$content" ]]; then
+        return
+    fi
+
+    # --- Find Secrets ---
+    if [[ "$ENABLE_SECRETS" == "true" ]]; then
         declare -A regexes
-        regexes[slack_token]="[\"'\'']?(xox[bapso]-[0-9]{12}-[0-9]{12}-[0-9]{12}-[a-z0-9]{32})[\"'\'']?"
-        regexes[facebook_access_token]="[\"'\'']?EAACEdEose0cBA[A-Za-z0-9]+[\"'\'']?"
-        regexes[github_personal_access_token]="([gGhHuUbB]{6,8})?.*[\"'\'']\\K(gh[pousr]?_[0-9a-zA-Z]{36})[\"'\'']?"
-        regexes[google_api_key]="[\"'\'']?AIza[0-9A-Za-z\\-_]{35}[\"'\'']?"
-        regexes[twilio_auth_token]="(?i)twilio.*[\"'\'']\\K[0-9a-f]{32}[\"'\'']?"
-        regexes[aws_access_key_id]="[\"'\'']?AKIA[0-9A-Z]{16}[\"'\'']?"
-        regexes[cloudflare_api_token]="(?i)cloudflare.*[\"'\'']\\K[a-z0-9]{24,}[\"'\'']?"
-        regexes[firebase_database_url]="https?://([a-z0-9-]+\\.firebaseio\\.com|([a-z0-9-]+\\.)?firebasedatabase\\.app)/"
-        regexes[datadog_api_key]="(?i)datadog.*[\"'\'']\\K[a-f0-9]{32}-[a-f0-9]{8}[\"'\'']?"
-        regexes[browserstack_access_key]="(?i)browserstack.*[\"'\'']\\K[a-zA-Z0-9_-]{40}[\"'\'']?"
-        regexes[asana_access_token]="[\"'\'']?([0-9]{8}:[a-zA-Z0-9]{84})[\"'\'']?"
+        regexes[slack_token]="(xox[bapso]-[0-9]{12}-[0-9]{12}-[0-9]{12}-[a-z0-9]{32})"
+        regexes[facebook_access_token]="(EAACEdEose0cBA[A-Za-z0-9]+)"
+        regexes[github_personal_access_token]="(gh[pousr]_[0-9a-zA-Z]{36})"
+        regexes[google_api_key]="(AIza[0-9A-Za-z\\-_]{35})"
+        regexes[twilio_auth_token]="(SK[0-9a-fA-F]{32})"
+        regexes[aws_access_key_id]="(AKIA[0-9A-Z]{16})"
+        regexes[firebase_database_url]="(https?://([a-z0-9-]+\\.firebaseio\\.com|([a-z0-9-]+\\.)?firebasedatabase\\.app)/?)"
+        regexes[asana_access_token]="([0-9]{8}:[a-zA-Z0-9]{84})"
+
         for type in "${!regexes[@]}"; do
-            echo "$content" | grep -ioP "${regexes[$type]}" | sed "s/^[\"'\'']//; s/[\"'\'']$//" | sort -u | sed "s/^/${type}: /" >> "'"$SECRETS_FILE"'"
+            echo "$content" | grep -oP "${regexes[$type]}" | sed "s/^/SECRET::$type::/"
         done
-        echo -e "\n-----------------------------\n" >> "'"$SECRETS_FILE"'"
-    ' bash {} &
-    secrets_pid=$!
-    detail "Secrets scan PID: $secrets_pid"
-fi
-if [[ -n "$PATHS_FILE" || -n "$LINKS_FILE" ]]; then
-    detail "Scanning for endpoints with LinkFinder"
-    ENDPOINTS_TEMP=$(mktemp)
-    > "$ENDPOINTS_TEMP"
-    cat "$SCAN_TARGETS" | xargs -P "$CONCURRENCY" -I {} bash -c '
-        echo "[*] Scanning: $0" >> "'"$ENDPOINTS_TEMP"'"
-        linkfinder -i "$0" -o cli >> "'"$ENDPOINTS_TEMP"'"
-    ' {} &
-    endpoints_pid=$!
-    detail "LinkFinder PID: $endpoints_pid"
-fi
-if [[ -n "$secrets_pid" || -n "$endpoints_pid" ]]; then
+    fi
+
+    # --- Find Paths ---
+    if [[ "$ENABLE_PATHS" == "true" ]]; then
+        echo "$content" | grep -aEio '(["'"'"'`])(/?([a-zA-Z0-9_./-]+\?)[a-zA-Z0-9_=&.-]*|/?([a-zA-Z0-9_./-]+))(["'"'"'`])' | sed -E 's/^.(.*).$/\1/' | grep '^/' | sed 's/^/PATH::/'
+    fi
+
+    # --- Find Links ---
+    if [[ "$ENABLE_LINKS" == "true" ]]; then
+        echo "$content" | grep -aEio '(["'"'"'`])(https?://[a-zA-Z0-9@_./?=&%:-]+)(["'"'"'`])' | sed -E 's/^.(.*).$/\1/' | sed 's/^/LINK::/'
+    fi
+}
+
+ANALYSIS_RESULTS=""
+analysis_pid=""
+
+if [[ -n "$SECRETS_FILE" || -n "$PATHS_FILE" || -n "$LINKS_FILE" ]]; then
+    
+    # Set flags for the exported function to avoid checking file paths inside it
+    ENABLE_SECRETS="false" && [[ -n "$SECRETS_FILE" ]] && ENABLE_SECRETS="true"
+    ENABLE_PATHS="false" && [[ -n "$PATHS_FILE" ]] && ENABLE_PATHS="true"
+    ENABLE_LINKS="false" && [[ -n "$LINKS_FILE" ]] && ENABLE_LINKS="true"
+    
+    export -f process_js_url
+    export UA ENABLE_SECRETS ENABLE_PATHS ENABLE_LINKS
+
+    ANALYSIS_RESULTS=$(mktemp)
+    detail "Aggregating analysis results into: $ANALYSIS_RESULTS"
+
+    cat "$SCAN_TARGETS" | xargs -P "$CONCURRENCY" -I {} bash -c 'process_js_url "{}"' > "$ANALYSIS_RESULTS" &
+    analysis_pid=$!
+    
     # Spinner animation
     printf "${CYAN}┗━▶ Analysis in Progress...${NC} "
     spinner_i=0
-    while true; do
-        all_done=true
-        [[ -n "$secrets_pid" ]] && kill -0 "$secrets_pid" 2>/dev/null && all_done=false
-        [[ -n "$endpoints_pid" ]] && kill -0 "$endpoints_pid" 2>/dev/null && all_done=false
-        if $all_done; then break; fi
+    while kill -0 "$analysis_pid" 2>/dev/null; do
         spinner_char="${SPINNER_FRAMES:$((spinner_i % ${#SPINNER_FRAMES})):1}"
         printf "\r${CYAN}┗━▶ Analysis in Progress... $spinner_char${NC} "
         spinner_i=$((spinner_i + 1))
         sleep 0.1
     done
-    printf "\r${CYAN}┗━▶ Analysis Complete.      ${NC}\n"
-fi
-# Wait and check exit codes
-if [[ -n "$secrets_pid" ]]; then
-    wait "$secrets_pid"
-    exit_code=$?
-    if [[ $exit_code -ne 0 ]]; then
-        warn "Secrets scan failed (code $exit_code)"
+    wait "$analysis_pid"
+    printf "\r${CYAN}┗━▶ Analysis Complete.        ${NC}\n"
+
+    # Process aggregated results from the temp file
+    if [[ "$ENABLE_SECRETS" == "true" ]]; then
+        grep '^SECRET::' "$ANALYSIS_RESULTS" | sed -E 's/^SECRET::([^:]+)::(.*)/\1: \2/' | sort -u > "$SECRETS_FILE"
+        SECRETS_FOUND=$(wc -l < "$SECRETS_FILE" | tr -d ' ')
+        detail "Secrets found: $SECRETS_FOUND"
+        if [[ $SECRETS_FOUND -eq 0 ]]; then
+            rm "$SECRETS_FILE"
+            SECRETS_FILE=""
+            detail "Empty secrets file removed"
+        fi
     fi
-    SECRETS_FOUND=$(grep -Ec '^[a-z_]+: ' "$SECRETS_FILE" | tr -d ' \n')
-    detail "Secrets found: $SECRETS_FOUND"
-    if [[ $SECRETS_FOUND -eq 0 ]]; then
-        rm "$SECRETS_FILE"
-        SECRETS_FILE=""
-        detail "Empty secrets file removed"
-    fi
-fi
-if [[ -n "$endpoints_pid" ]]; then
-    wait "$endpoints_pid"
-    exit_code=$?
-    if [[ $exit_code -ne 0 ]]; then
-        warn "Endpoints scan failed (code $exit_code)"
-    fi
-    detail "Processing LinkFinder results"
-    if [[ -n "$PATHS_FILE" ]]; then
-      grep -Eo '(^| )/[a-zA-Z0-9._/?=&%-]+' "$ENDPOINTS_TEMP" | grep -viE '\.(js|css|png|jpg|jpeg|gif|svg|ico|woff2?|ttf|map)(\?|$)' | sort -u > "$PATHS_FILE"
+
+    if [[ "$ENABLE_PATHS" == "true" ]]; then
+        grep '^PATH::' "$ANALYSIS_RESULTS" | cut -d':' -f3- | grep -viE '\.(js|css|png|jpg|jpeg|gif|svg|ico|woff2?|ttf|map|eot|otf|xml|json|txt|md)(\?|$)' | sort -u > "$PATHS_FILE"
         PATHS_FOUND=$(wc -l < "$PATHS_FILE" | tr -d ' ')
         detail "Paths found: $PATHS_FOUND"
         if [[ $PATHS_FOUND -eq 0 ]]; then
@@ -341,8 +344,9 @@ if [[ -n "$endpoints_pid" ]]; then
             detail "Empty paths file removed"
         fi
     fi
-    if [[ -n "$LINKS_FILE" ]]; then
-        grep -Eo 'https?://[^ ]+' "$ENDPOINTS_TEMP" | grep -viE '\.(js|css|png|jpg|jpeg|gif|svg|ico|woff2?|ttf|map)(\?|$)' | sort -u > "$LINKS_FILE"
+
+    if [[ "$ENABLE_LINKS" == "true" ]]; then
+        grep '^LINK::' "$ANALYSIS_RESULTS" | cut -d':' -f3- | grep -viE '\.(js|css|png|jpg|jpeg|gif|svg|ico|woff2?|ttf|map|eot|otf|xml|json|txt|md)(\?|$)' | sort -u > "$LINKS_FILE"
         LINKS_FOUND=$(wc -l < "$LINKS_FILE" | tr -d ' ')
         detail "Links found: $LINKS_FOUND"
         if [[ $LINKS_FOUND -eq 0 ]]; then
@@ -352,18 +356,21 @@ if [[ -n "$endpoints_pid" ]]; then
         fi
     fi
 fi
-# Handle verified if no secrets
+
+# Handle verified if no secrets were found to begin with
 if [[ -z "$SECRETS_FILE" && -n "$VERIFIED_SECRETS_FILE" ]]; then
     rm -f "$VERIFIED_SECRETS_FILE" 2>/dev/null
     VERIFIED_SECRETS_FILE=""
     VERIFIED_SECRETS_FOUND=0
     detail "No secrets to verify; cleaned verified file"
 fi
+
 # --- Verification Phase ---
 if [[ -n "$VERIFIED_SECRETS_FILE" && -n "$SECRETS_FILE" ]]; then
-    stage "Phase 4.1: Verifying Secrets"
+    stage "Phase 3.1: Verifying Secrets"
     > "$VERIFIED_SECRETS_FILE"
     SECRETS_LIST=$(mktemp)
+    # Note: Only secrets with a verification method are added to the list
     grep -E '^(slack_token|facebook_access_token|github_personal_access_token|google_api_key|cloudflare_api_token|firebase_database_url|datadog_api_key|browserstack_access_key|asana_access_token):' "$SECRETS_FILE" | while read -r line; do
         type=$(echo "$line" | cut -d: -f1 | tr -d ' ')
         secret=$(echo "$line" | cut -d: -f2- | sed 's/^[ \t]*//;s/[ \t]*$//')
@@ -399,7 +406,7 @@ if [[ -n "$VERIFIED_SECRETS_FILE" && -n "$SECRETS_FILE" ]]; then
                     ;;
                 firebase_database_url)
                     cmd="curl -s \"$secret.json?auth=dev\""
-                    check="^{\\""
+                    check="^{\""
                     ;;
                 datadog_api_key)
                     cmd="curl -s -H \"DD-API-KEY: $secret\" \"https://api.datadoghq.com/api/v1/validate\""
@@ -430,7 +437,7 @@ if [[ -n "$VERIFIED_SECRETS_FILE" && -n "$SECRETS_FILE" ]]; then
             spinner_i=$((spinner_i + 1))
             sleep 0.1
         done
-        printf "\r${CYAN}┗━▶ Verification Complete.      ${NC}\n"
+        printf "\r${CYAN}┗━▶ Verification Complete.        ${NC}\n"
         wait "$verification_pid"
         exit_code=$?
         if [[ $exit_code -ne 0 ]]; then
@@ -445,13 +452,14 @@ if [[ -n "$VERIFIED_SECRETS_FILE" && -n "$SECRETS_FILE" ]]; then
         detail "Empty verified file removed"
     fi
 fi
+
 # --- Summary ---
 end_time=$(date +%s)
 total_time=$((end_time - start_time))
-stage "Phase 5: Results Summary"
+stage "Phase 4: Results Summary"
 substage "Recon complete. 🎉"
 echo -e "    ├── Total JS URLs Found: $total_js 🚀"
-echo -e "    ├── Live URLs (200 OK): $live_count ✅"
+echo -e "    ├── URLs for Analysis: $urls_for_analysis 🎯"
 [[ -n "$JS_URLS_FILE" ]] && echo -e "    ├── JS File: $JS_URLS_FILE 📄"
 if [[ -n "$SECRETS_FILE" ]]; then
     echo -e "    ├── Secrets: $SECRETS_FOUND ⚠️ ($SECRETS_FILE)"
