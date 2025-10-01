@@ -58,11 +58,6 @@ The script dynamically checks for required dependencies based on your options an
    cd subjs
    sudo go build
    sudo mv subjs /usr/local/bin
-
-   git clone https://github.com/GerbenJavado/LinkFinder.git
-   cd LinkFinder
-   pip3 install -r requirements.txt
-   sudo python3 setup.py install
    ```
 
    Adjust based on your OS and preferred installation method.
