@@ -28,8 +28,8 @@ JS-Hunter relies on the following external tools. Install them via your package 
 - `katana` (Level 2 discovery)
 - `waybackurls` (Level 3 discovery)
 - `gau` (Level 4 discovery)
-- `secretfinder` (for secret extraction, if `-s` is used)
-- `linkfinder` (for path/link extraction, if `-p` or `-l` is used)
+- (for secret extraction, if `-s` is used)
+- (for path/link extraction, if `-p` or `-l` is used)
 
 The script dynamically checks for required dependencies based on your options and exits if any are missing.
 
