@@ -2,11 +2,11 @@
 # --- Colors & Styles ---
 # Hacker minimalist theme: Matrix-inspired greens, subtle cyans, clean contrasts.
 HACKER_GREEN=$(tput setaf 2) # Main text and success
-CYAN=$(tput setaf 6) # Highlights and info
-ORANGE=$(tput setaf 3) # Warnings
-RED=$(tput setaf 1) # Errors
-WHITE=$(tput setaf 7) # Neutral text
-DIM=$(tput dim) # Subtle dim for details
+CYAN=$(tput setaf 6)         # Highlights and info
+ORANGE=$(tput setaf 3)       # Warnings
+RED=$(tput setaf 1)          # Errors
+WHITE=$(tput setaf 7)        # Neutral text
+DIM=$(tput dim)              # Subtle dim for details
 BOLD=$(tput bold)
 NC=$(tput sgr0) # No Color
 
@@ -19,7 +19,7 @@ banner() {
     echo "██╗  ██║╚════██║██╔══██║██║   ██║██║╚██╗██║   ██║   ██╔════╝██╔══██╗"
     echo "╚██████║███████║██║  ██║╚██████╔╝██║ ╚████║   ██║   ███████╗██║  ██║"
     echo " ╚═════╝╚══════╝╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═══╝   ╚═╝   ╚══════╝╚═╝  ╚═╝"
-    echo "                                by Crypt Specter V6.1 (No-Filter Edition)"
+    echo "                                        by 0bl1vyx V6.5"
     echo -e "${NC}"
 }
 header() {
@@ -46,15 +46,14 @@ help_menu() {
     echo -e " -dl <file> Domain list input (txt)"
     echo -e "${ORANGE}Optional:${NC}"
     echo -e " -o <file>  JS URLs output"
-    echo -e " -s <file>  Secrets output"
-    echo -e " -cs <file> Verify secrets and save to file (requires -s)"
+    echo -e " -s <file>  Secrets output (verified where possible)"
     echo -e " -p <file>  Paths output"
     echo -e " -l <file>  Links output"
     echo -e " -lv <1-4>  Discovery level (default: 4)"
     echo -e " -c <num>   Concurrency level (default: 4)"
     echo -e " -v         Verbose output (extra details)"
     echo -e " -h, --help This guide\n"
-    echo -e "${HACKER_GREEN}Example:${NC} $0 -dl domains.txt -o js.txt -s secrets.txt -cs verified.txt -p paths.txt -l links.txt -lv 2 -c 8 -v"
+    echo -e "${HACKER_GREEN}Example:${NC} $0 -dl domains.txt -o js.txt -s secrets.txt -p paths.txt -l links.txt -lv 2 -c 8 -v"
     exit 0
 }
 error() {
@@ -78,13 +77,12 @@ confirm_overwrite() {
 }
 
 # Trap for cleanup
-trap 'rm -f "$DOMAINS" "$URLS" "$ALL_JS_URLS" "${results[@]}" "$ANALYSIS_RESULTS" "$SECRETS_LIST" 2>/dev/null' EXIT
+trap 'rm -f "$DOMAINS" "$URLS" "$ALL_JS_URLS" "${results[@]}" "$ANALYSIS_RESULTS" "$SECRETS_LIST" "$PROCESSED_SECRETS" "$VERIFIABLE_SECRETS" 2>/dev/null' EXIT
 
 # --- Argument Parsing ---
 DOMAIN_LIST_INPUT=""
 JS_URLS_FILE=""
 SECRETS_FILE=""
-VERIFIED_SECRETS_FILE=""
 PATHS_FILE=""
 LINKS_FILE=""
 LEVEL=4
@@ -93,26 +91,25 @@ VERBOSE=false
 while [[ $# -gt 0 ]]; do
     key="$1"
     case $key in
-        -dl|-o|-s|-cs|-p|-l|-lv|-c)
-            if [[ $# -lt 2 || "$2" == -* ]]; then
-                error "Missing value for $key"
-            fi
-            value="$2"
-            shift 2
-            case $key in
-                -dl) DOMAIN_LIST_INPUT="$value" ;;
-                -o) JS_URLS_FILE="$value" ;;
-                -s) SECRETS_FILE="$value" ;;
-                -cs) VERIFIED_SECRETS_FILE="$value" ;;
-                -p) PATHS_FILE="$value" ;;
-                -l) LINKS_FILE="$value" ;;
-                -lv) LEVEL="$value" ;;
-                -c) CONCURRENCY="$value" ;;
-            esac
-            ;;
-        -v) VERBOSE=true; shift ;;
-        -h|--help) help_menu ;;
-        *) error "Invalid option: $1" ;;
+    -dl | -o | -s | -p | -l | -lv | -c)
+        if [[ $# -lt 2 || "$2" == -* ]]; then
+            error "Missing value for $key"
+        fi
+        value="$2"
+        shift 2
+        case $key in
+        -dl) DOMAIN_LIST_INPUT="$value" ;;
+        -o) JS_URLS_FILE="$value" ;;
+        -s) SECRETS_FILE="$value" ;;
+        -p) PATHS_FILE="$value" ;;
+        -l) LINKS_FILE="$value" ;;
+        -lv) LEVEL="$value" ;;
+        -c) CONCURRENCY="$value" ;;
+        esac
+        ;;
+    -v) VERBOSE=true; shift ;;
+    -h | --help) help_menu ;;
+    *) error "Invalid option: $1" ;;
     esac
 done
 
@@ -121,7 +118,6 @@ done
 [[ ! -f "$DOMAIN_LIST_INPUT" ]] && error "File '$DOMAIN_LIST_INPUT' not found"
 [[ ! "$LEVEL" =~ ^[1-4]$ ]] && error "Level must be 1-4"
 [[ ! "$CONCURRENCY" =~ ^[1-9][0-9]*$ ]] && error "Concurrency must be a positive integer"
-[[ -n "$VERIFIED_SECRETS_FILE" && -z "$SECRETS_FILE" ]] && error "-cs requires -s"
 
 # --- Dynamic Dependency Check ---
 declare -A tools=(
@@ -132,19 +128,18 @@ declare -A tools=(
 )
 # httpx removed from this list
 dependencies=("curl" "grep" "sed" "sort" "wc" "awk" "tr")
-for i in $(seq 1 "$LEVEL"); do
+for i in $(seq 1 $LEVEL); do
     dependencies+=("${tools[$i]}")
 done
 dependencies=($(echo "${dependencies[@]}" | tr ' ' '\n' | sort -u | tr '\n' ' '))
 for dep in "${dependencies[@]}"; do
-    command -v "$dep" &> /dev/null || error "Missing: $dep"
+    command -v "$dep" &>/dev/null || error "Missing: $dep"
 done
 detail "Dependencies checked: ${dependencies[*]}"
 
 # --- Overwrite Confirmation ---
 [[ -n "$JS_URLS_FILE" ]] && confirm_overwrite "$JS_URLS_FILE"
 [[ -n "$SECRETS_FILE" ]] && confirm_overwrite "$SECRETS_FILE"
-[[ -n "$VERIFIED_SECRETS_FILE" ]] && confirm_overwrite "$VERIFIED_SECRETS_FILE"
 [[ -n "$PATHS_FILE" ]] && confirm_overwrite "$PATHS_FILE"
 [[ -n "$LINKS_FILE" ]] && confirm_overwrite "$LINKS_FILE"
 
@@ -154,10 +149,10 @@ banner
 start_time=$(date +%s)
 detail "Processing input: $DOMAIN_LIST_INPUT"
 DOMAINS=$(mktemp)
-sed -E 's|^https?://||' "$DOMAIN_LIST_INPUT" | sort -u > "$DOMAINS"
-detail "Domains prepared: $(wc -l < "$DOMAINS") unique"
+sed -E 's|^https?://||' "$DOMAIN_LIST_INPUT" | sort -u >"$DOMAINS"
+detail "Domains prepared: $(wc -l <"$DOMAINS") unique"
 URLS=$(mktemp)
-awk '{print "https://" $0}' "$DOMAINS" > "$URLS"
+awk '{print "https://" $0}' "$DOMAINS" >"$URLS"
 detail "URLs ready for scanning"
 UA="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36"
 detail "User-Agent set: $UA"
@@ -175,18 +170,18 @@ for i in $(seq 1 $LEVEL); do
     detail "Launching $tool"
     detail "Temp file: ${results[$tool]}"
     case $tool in
-        "subjs")
-            subjs -i "$URLS" -ua "$UA" -c "$CONCURRENCY" > "${results[$tool]}" &
-            ;;
-        "katana")
-            cat "$URLS" | xargs -P "$CONCURRENCY" -I {} sh -c "katana -u {} -jc -silent -H 'User-Agent: $UA' | grep -Ei '\.js([?#].*)?\$' >> '${results[$tool]}' || true" &
-            ;;
-        "waybackurls")
-            cat "$DOMAINS" | xargs -P "$CONCURRENCY" -I {} sh -c "waybackurls {} | grep -Ei '\.js([?#].*)?\$' >> '${results[$tool]}' || true" &
-            ;;
-        "gau")
-            cat "$DOMAINS" | xargs -P "$CONCURRENCY" -I {} sh -c "gau {} 2>/dev/null | grep -Ei '\.js([?#].*)?\$' >> '${results[$tool]}' || true" &
-            ;;
+    "subjs")
+        subjs -i "$URLS" -ua "$UA" -c "$CONCURRENCY" >"${results[$tool]}" &
+        ;;
+    "katana")
+        cat "$URLS" | xargs -P "$CONCURRENCY" -I {} sh -c "katana -u {} -jc -silent -H 'User-Agent: $UA' | grep -Ei '\.js([?#].*)?\$' >> '${results[$tool]}' || true" &
+        ;;
+    "waybackurls")
+        cat "$DOMAINS" | xargs -P "$CONCURRENCY" -I {} sh -c "waybackurls {} | grep -Ei '\.js([?#].*)?\$' >> '${results[$tool]}' || true" &
+        ;;
+    "gau")
+        cat "$DOMAINS" | xargs -P "$CONCURRENCY" -I {} sh -c "gau {} 2>/dev/null | grep -Ei '\.js([?#].*)?\$' >> '${results[$tool]}' || true" &
+        ;;
     esac
     pids[$tool]=$!
     detail "PID: ${pids[$tool]}"
@@ -215,19 +210,19 @@ for tool in "${!pids[@]}"; do
     if [[ $exit_code -ne 0 ]]; then
         warn "$tool failed (code $exit_code)"
     else
-        detail "$tool complete: $(wc -l < "${results[$tool]}") URLs"
+        detail "$tool complete: $(wc -l <"${results[$tool]}") URLs"
     fi
 done
 for tool in "${!results[@]}"; do
-    tool_result "$tool : $(wc -l < "${results[$tool]}") URLs found"
+    tool_result "$tool : $(wc -l <"${results[$tool]}") URLs found"
 done
 
 # --- Consolidation Phase ---
 stage "Phase 2: Consolidating URLs"
 ALL_JS_URLS=$(mktemp)
 detail "Merging results into: $ALL_JS_URLS"
-cat "${results[@]}" | sort -u > "$ALL_JS_URLS"
-total_js=$(wc -l < "$ALL_JS_URLS" | tr -d ' ')
+cat "${results[@]}" | sort -u >"$ALL_JS_URLS"
+total_js=$(wc -l <"$ALL_JS_URLS" | tr -d ' ')
 substage "Found $total_js unique JS URLs."
 [[ $total_js -eq 0 ]] && error "No JS URLs found"
 
@@ -248,7 +243,6 @@ SECRETS_FOUND=0
 VERIFIED_SECRETS_FOUND=0
 PATHS_FOUND=0
 LINKS_FOUND=0
-SECRETS_LIST=""
 
 # This function is exported and run in parallel for each URL.
 # It fetches the URL content once and scans for secrets, paths, and links.
@@ -266,14 +260,78 @@ process_js_url() {
     # --- Find Secrets ---
     if [[ "$ENABLE_SECRETS" == "true" ]]; then
         declare -A regexes
-        regexes[slack_token]="(xox[bapso]-[0-9]{12}-[0-9]{12}-[0-9]{12}-[a-z0-9]{32})"
-        regexes[facebook_access_token]="(EAACEdEose0cBA[A-Za-z0-9]+)"
-        regexes[github_personal_access_token]="(gh[pousr]_[0-9a-zA-Z]{36})"
-        regexes[google_api_key]="(AIza[0-9A-Za-z\\-_]{35})"
-        regexes[twilio_auth_token]="(SK[0-9a-fA-F]{32})"
+        # Comprehensive Regex List for Secret Detection
         regexes[aws_access_key_id]="(AKIA[0-9A-Z]{16})"
-        regexes[firebase_database_url]="(https?://([a-z0-9-]+\\.firebaseio\\.com|([a-z0-9-]+\\.)?firebasedatabase\\.app)/?)"
-        regexes[asana_access_token]="([0-9]{8}:[a-zA-Z0-9]{84})"
+        regexes[aws_secret_access_key]="((?i)aws(.{0,20})?(?-i)['\"][0-9a-zA-Z\/+]{40}['\"])"
+        regexes[google_api_key]="(AIza[0-9A-Za-z\\-_]{35})"
+        regexes[firebase_secret]="(AAAA[A-Za-z0-9_-]{7}:[A-Za-z0-9_-]{140})"
+        regexes[github_token]="(gh[pousr]_[0-9a-zA-Z]{36})"
+        regexes[github_fine_grained_token]="(github_pat_[0-9a-zA-Z_]{20,})"
+        regexes[gitlab_token]="(glpat-[0-9a-zA-Z-_]{20})"
+        regexes[slack_token]="(xox[baprs]-([0-9a-zA-Z]{10,48})?)"
+        regexes[stripe_secret_key]="(sk_live_[0-9a-zA-Z]{24})"
+        regexes[stripe_publishable_key]="(pk_live_[0-9a-zA-Z]{24})"
+        regexes[twilio_api_key]="(SK[0-9a-fA-F]{32})"
+        regexes[sendgrid_api_key]="(SG\.[\w\d\-_]{22}\.[\w\d\-_]{43})"
+        regexes[mailgun_api_key]="(key-[0-9a-zA-Z]{32})"
+        regexes[dropbox_access_token]="(sl\.[A-Za-z0-9_-]{20,100})"
+        regexes[shopify_access_token]="(shpat_[0-9a-fA-F]{32})"
+        regexes[facebook_access_token]="(EAACEdEose0cBA[0-9A-Za-z]+)"
+        regexes[heroku_api_key]="([hH]eroku['\"][0-9a-f]{32}['\"])"
+        regexes[digitalocean_token]="(dop_v1_[a-z0-9]{64})"
+        regexes[asana_pat]="(0\/[0-9a-z]{32})"
+        regexes[linear_api_key]="(lin_api_[a-zA-Z0-9]{40})"
+        regexes[telegram_bot_token]="(\d{9}:[a-zA-Z0-9_-]{35})"
+        regexes[oauth_client_secret]="((?i)client_secret['\"\s:=]+[a-zA-Z0-9\-_.~]{10,100})"
+        regexes[oauth_client_id]="((?i)client_id['\"\s:=]+[a-zA-Z0-9\-_.~]{10,100})"
+        regexes[jwt_token]="(eyJ[A-Za-z0-9-_=]+?\.[A-Za-z0-9-_=]+\.?[A-Za-z0-9-_.+/=]*)"
+        regexes[azure_client_secret]="((?i)azure(.{0,20})?client.secret(.{0,20})?['\"][a-zA-Z0-9._%+-]{32,}['\"])"
+        regexes[msteams_webhook]="(https:\/\/[a-z]+\.webhook\.office\.com\/webhookb2\/[a-zA-Z0-9@\-]+\/.*)"
+        regexes[basic_auth_string]="((?i)(username|user|email)['\"\s:=]+[^\s'\"@]{1,100}['\"].*?(password|pwd)['\"\s:=]+[^\s'\"]{4,100})"
+        regexes[password_assignment]="((?i)(password|pwd|pass)['\"\s:=]+[^\s'\"]{4,100})"
+        regexes[api_key_variable]="((?i)(api[_-]?key)['\"\s:=]+[a-zA-Z0-9\-_.]{8,100})"
+        regexes[secret_in_variable]="((?i)(secret|token)['\"\s:=]+[a-zA-Z0-9\-_.]{8,100})"
+        regexes[auth_bearer_token]="(Bearer\s+[a-zA-Z0-9\-._~+/]+=*)"
+        regexes[mongodb_uri]="(mongodb(\+srv)?:\/\/[^\s'\"]+)"
+        regexes[postgresql_uri]="(postgres(?:ql)?:\/\/[^\s'\"]+)"
+        regexes[mysql_uri]="(mysql:\/\/[^\s'\"]+)"
+        regexes[redis_uri]="(redis:\/\/[^\s'\"]+)"
+        regexes[elasticsearch_uri]="(elasticsearch:\/\/[^\s'\"]+)"
+        regexes[supabase_db_key]="(supabase\.co\/[a-z0-9]{15,})"
+        regexes[firebase_url]="(https:\/\/[a-z0-9-]+\.firebaseio\.com)"
+        regexes[jdbc_url]="(jdbc:\w+:\/\/[^\s'\"]+)"
+        regexes[aws_rds_hostname]="([a-z0-9-]+\.rds\.amazonaws\.com)"
+        regexes[gcp_cloud_sql_uri]="(googleapis\.com\/sql\/v1beta4\/projects\/)"
+        regexes[algolia_api_key]="((?i)(algolia|application)_?key['\"\s:=]+[a-zA-Z0-9]{10,})"
+        regexes[cloudinary_url]="(cloudinary:\/\/[0-9]{15}:[a-zA-Z0-9]+@[a-zA-Z]+)"
+        regexes[sentry_dsn]="(https:\/\/[a-zA-Z0-9]+@[a-z]+\.ingest\.sentry\.io\/\d+)"
+        regexes[github_oauth_app_secret]="([a-f0-9]{40})"
+        regexes[dockerhub_password]="((?i)docker(.{0,20})?password['\"\s:=]+[^\s'\"]{8,})"
+        regexes[aws_iam_role_arn]="(arn:aws:iam::[0-9]{12}:role\/[A-Za-z0-9_+=,.@\-_/]+)"
+        regexes[aws_s3_bucket_url]="(s3:\/\/[a-z0-9\-\.]{3,63})"
+        regexes[k8s_secret_name]="((?i)secretName:\s*['\"]?[a-z0-9\-]+['\"]?)"
+        regexes[github_actions_secret_ref]="(secrets\.[A-Z0-9_]+)"
+        regexes[k8s_service_account_token]="(eyJhbGciOiJSUzI1NiIsImtpZCI6)"
+        regexes[vault_token]="(s\.[a-zA-Z0-9]{8,})"
+        regexes[circleci_token]="(circle-token=[a-z0-9]{40})"
+        regexes[travisci_token]="((?i)travis(.{0,20})?token['\"\s:=]+[a-z0-9]{30,})"
+        regexes[azure_devops_token]="([a-z0-9]{52})"
+        regexes[gitlab_runner_token]="(glrt-[a-zA-Z0-9_-]{20})"
+        regexes[bugsnag_api_key]="([a-f0-9]{32})"
+        regexes[datadog_api_key]="([a-z0-9]{32})"
+        regexes[loggly_token]="([a-z0-9]{30}-[a-z0-9]{10})"
+        regexes[newrelic_key]="(NRII-[a-zA-Z0-9]{20,})"
+        regexes[mixpanel_token]="((?i)mixpanel(.{0,20})?token['\"\s:=]+[a-z0-9]{32})"
+        regexes[snyk_token]="(snyk_token\s*=\s*[a-f0-9\-]{36})"
+        regexes[rollbar_access_token]="(access_token['\"]?\s*:\s*['\"][a-z0-9]{32}['\"])"
+        regexes[discord_bot_token]="([MN][A-Za-z\d]{23}\.[\w-]{6}\.[\w-]{27})"
+        regexes[discord_webhook_url]="(https:\/\/discord(?:app)?\.com\/api\/webhooks\/[0-9]+\/[a-zA-Z0-9_-]+)"
+        regexes[steam_web_api_key]="((?i)steam(.{0,20})?key['\"\s:=]+[a-zA-Z0-9]{32})"
+        regexes[riot_games_api_key]="(RGAPI-[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})"
+        regexes[dev_stage_url]="((dev|staging|test)\.[a-z0-9.-]+\.(com|net|io))"
+        regexes[internal_subdomain_url]="(https?:\/\/[a-z0-9.-]+\.internal\.[a-z]{2,})"
+        regexes[private_key_block]="(-----BEGIN (RSA|DSA|EC|OPENSSH)? PRIVATE KEY-----)"
+        regexes[base64_high_entropy_string]="(['\"][A-Za-z0-9+\/]{40,}={0,2}['\"])"
 
         for type in "${!regexes[@]}"; do
             echo "$content" | grep -oP "${regexes[$type]}" | sed "s/^/SECRET::$type::/"
@@ -295,21 +353,21 @@ ANALYSIS_RESULTS=""
 analysis_pid=""
 
 if [[ -n "$SECRETS_FILE" || -n "$PATHS_FILE" || -n "$LINKS_FILE" ]]; then
-    
+
     # Set flags for the exported function to avoid checking file paths inside it
     ENABLE_SECRETS="false" && [[ -n "$SECRETS_FILE" ]] && ENABLE_SECRETS="true"
     ENABLE_PATHS="false" && [[ -n "$PATHS_FILE" ]] && ENABLE_PATHS="true"
     ENABLE_LINKS="false" && [[ -n "$LINKS_FILE" ]] && ENABLE_LINKS="true"
-    
+
     export -f process_js_url
     export UA ENABLE_SECRETS ENABLE_PATHS ENABLE_LINKS
 
     ANALYSIS_RESULTS=$(mktemp)
     detail "Aggregating analysis results into: $ANALYSIS_RESULTS"
 
-    cat "$SCAN_TARGETS" | xargs -P "$CONCURRENCY" -I {} bash -c 'process_js_url "{}"' > "$ANALYSIS_RESULTS" &
+    cat "$SCAN_TARGETS" | xargs -P "$CONCURRENCY" -I {} bash -c 'process_js_url "{}"' >"$ANALYSIS_RESULTS" &
     analysis_pid=$!
-    
+
     # Spinner animation
     printf "${CYAN}┗━▶ Analysis in Progress...${NC} "
     spinner_i=0
@@ -320,12 +378,12 @@ if [[ -n "$SECRETS_FILE" || -n "$PATHS_FILE" || -n "$LINKS_FILE" ]]; then
         sleep 0.1
     done
     wait "$analysis_pid"
-    printf "\r${CYAN}┗━▶ Analysis Complete.        ${NC}\n"
+    printf "\r${CYAN}┗━▶ Analysis Complete.         ${NC}\n"
 
     # Process aggregated results from the temp file
     if [[ "$ENABLE_SECRETS" == "true" ]]; then
-        grep '^SECRET::' "$ANALYSIS_RESULTS" | sed -E 's/^SECRET::([^:]+)::(.*)/\1: \2/' | sort -u > "$SECRETS_FILE"
-        SECRETS_FOUND=$(wc -l < "$SECRETS_FILE" | tr -d ' ')
+        grep '^SECRET::' "$ANALYSIS_RESULTS" | sed -E 's/^SECRET::([^:]+)::(.*)/\1: \2/' | sort -u >"$SECRETS_FILE"
+        SECRETS_FOUND=$(wc -l <"$SECRETS_FILE" | tr -d ' ')
         detail "Secrets found: $SECRETS_FOUND"
         if [[ $SECRETS_FOUND -eq 0 ]]; then
             rm "$SECRETS_FILE"
@@ -335,8 +393,8 @@ if [[ -n "$SECRETS_FILE" || -n "$PATHS_FILE" || -n "$LINKS_FILE" ]]; then
     fi
 
     if [[ "$ENABLE_PATHS" == "true" ]]; then
-        grep '^PATH::' "$ANALYSIS_RESULTS" | cut -d':' -f3- | grep -viE '\.(js|css|png|jpg|jpeg|gif|svg|ico|woff2?|ttf|map|eot|otf|xml|json|txt|md)(\?|$)' | sort -u > "$PATHS_FILE"
-        PATHS_FOUND=$(wc -l < "$PATHS_FILE" | tr -d ' ')
+        grep '^PATH::' "$ANALYSIS_RESULTS" | cut -d':' -f3- | grep -viE '\.(js|css|png|jpg|jpeg|gif|svg|ico|woff2?|ttf|map|eot|otf|xml|json|txt|md)(\?|$)' | sort -u >"$PATHS_FILE"
+        PATHS_FOUND=$(wc -l <"$PATHS_FILE" | tr -d ' ')
         detail "Paths found: $PATHS_FOUND"
         if [[ $PATHS_FOUND -eq 0 ]]; then
             rm "$PATHS_FILE"
@@ -346,8 +404,8 @@ if [[ -n "$SECRETS_FILE" || -n "$PATHS_FILE" || -n "$LINKS_FILE" ]]; then
     fi
 
     if [[ "$ENABLE_LINKS" == "true" ]]; then
-        grep '^LINK::' "$ANALYSIS_RESULTS" | cut -d':' -f3- | grep -viE '\.(js|css|png|jpg|jpeg|gif|svg|ico|woff2?|ttf|map|eot|otf|xml|json|txt|md)(\?|$)' | sort -u > "$LINKS_FILE"
-        LINKS_FOUND=$(wc -l < "$LINKS_FILE" | tr -d ' ')
+        grep '^LINK::' "$ANALYSIS_RESULTS" | cut -d':' -f3- | grep -viE '\.(js|css|png|jpg|jpeg|gif|svg|ico|woff2?|ttf|map|eot|otf|xml|json|txt|md)(\?|$)' | sort -u >"$LINKS_FILE"
+        LINKS_FOUND=$(wc -l <"$LINKS_FILE" | tr -d ' ')
         detail "Links found: $LINKS_FOUND"
         if [[ $LINKS_FOUND -eq 0 ]]; then
             rm "$LINKS_FILE"
@@ -357,31 +415,27 @@ if [[ -n "$SECRETS_FILE" || -n "$PATHS_FILE" || -n "$LINKS_FILE" ]]; then
     fi
 fi
 
-# Handle verified if no secrets were found to begin with
-if [[ -z "$SECRETS_FILE" && -n "$VERIFIED_SECRETS_FILE" ]]; then
-    rm -f "$VERIFIED_SECRETS_FILE" 2>/dev/null
-    VERIFIED_SECRETS_FILE=""
-    VERIFIED_SECRETS_FOUND=0
-    detail "No secrets to verify; cleaned verified file"
-fi
-
 # --- Verification Phase ---
-if [[ -n "$VERIFIED_SECRETS_FILE" && -n "$SECRETS_FILE" ]]; then
+# This phase runs if secrets were found, and it will update the secrets file with verification statuses.
+if [[ -n "$SECRETS_FILE" && $SECRETS_FOUND -gt 0 ]]; then
     stage "Phase 3.1: Verifying Secrets"
-    > "$VERIFIED_SECRETS_FILE"
-    SECRETS_LIST=$(mktemp)
-    # Note: Only secrets with a verification method are added to the list
-    grep -E '^(slack_token|facebook_access_token|github_personal_access_token|google_api_key|cloudflare_api_token|firebase_database_url|datadog_api_key|browserstack_access_key|asana_access_token):' "$SECRETS_FILE" | while read -r line; do
-        type=$(echo "$line" | cut -d: -f1 | tr -d ' ')
-        secret=$(echo "$line" | cut -d: -f2- | sed 's/^[ \t]*//;s/[ \t]*$//')
-        if [[ -n "$secret" ]]; then
-            echo "$type $secret" >> "$SECRETS_LIST"
-        fi
-    done
-    total_secrets=$(wc -l < "$SECRETS_LIST" | tr -d ' ')
-    if [[ $total_secrets -gt 0 ]]; then
-        detail "Verifying $total_secrets secrets"
-        cat "$SECRETS_LIST" | xargs -P "$CONCURRENCY" -n 2 sh -c '
+
+    PROCESSED_SECRETS=$(mktemp)
+    VERIFIABLE_SECRETS=$(mktemp)
+
+    # List of secret types that have a verification method in the script
+    VERIFIABLE_TYPES_REGEX='^(slack_token|facebook_access_token|github_token|google_api_key|cloudflare_api_token|firebase_url|datadog_api_key|browserstack_access_key|asana_pat):'
+
+    # Separate secrets: those we can check and those we can't
+    grep -E "$VERIFIABLE_TYPES_REGEX" "$SECRETS_FILE" >"$VERIFIABLE_SECRETS"
+    grep -vE "$VERIFIABLE_TYPES_REGEX" "$SECRETS_FILE" | sed 's/$/ (not verified)/' >"$PROCESSED_SECRETS"
+
+    total_verifiable=$(wc -l <"$VERIFIABLE_SECRETS" | tr -d ' ')
+    if [[ $total_verifiable -gt 0 ]]; then
+        detail "Attempting to verify $total_verifiable secrets"
+
+        # Convert "type: secret" to "type secret" for xargs and run verification in parallel
+        sed -E 's/^([^:]+):[[:space:]]*(.*)/\1 \2/' "$VERIFIABLE_SECRETS" | xargs -P "$CONCURRENCY" -n 2 sh -c '
             type=$1; secret=$2
             case "$type" in
                 slack_token)
@@ -392,7 +446,7 @@ if [[ -n "$VERIFIED_SECRETS_FILE" && -n "$SECRETS_FILE" ]]; then
                     cmd="curl -s \"https://graph.facebook.com/me?access_token=$secret\""
                     check="\"id\":"
                     ;;
-                github_personal_access_token)
+                github_token)
                     cmd="curl -s -H \"Authorization: token $secret\" \"https://api.github.com/user\""
                     check="\"login\":"
                     ;;
@@ -404,7 +458,7 @@ if [[ -n "$VERIFIED_SECRETS_FILE" && -n "$SECRETS_FILE" ]]; then
                     cmd="curl -s -X GET \"https://api.cloudflare.com/client/v4/user/tokens/verify\" -H \"Authorization: Bearer $secret\" -H \"Content-Type: application/json\""
                     check="\"success\":true"
                     ;;
-                firebase_database_url)
+                firebase_url)
                     cmd="curl -s \"$secret.json?auth=dev\""
                     check="^{\""
                     ;;
@@ -416,17 +470,19 @@ if [[ -n "$VERIFIED_SECRETS_FILE" && -n "$SECRETS_FILE" ]]; then
                     cmd="curl -s -u \"$secret:unused\" \"https://api.browserstack.com/automate/users.json\""
                     check="\"hashed_id\":"
                     ;;
-                asana_access_token)
+                asana_pat)
                     cmd="curl -s -H \"Authorization: Bearer $secret\" \"https://app.asana.com/api/1.0/users/me\""
                     check="\"gid\":"
                     ;;
-                *) exit 0 ;;
             esac
             output=$(eval "$cmd")
-            if echo "$output" | grep -q "$check"; then
+            if echo "$output" | grep -qF "$check"; then
                 echo "$type: $secret (verified)"
+            else
+                echo "$type: $secret (not verified)"
             fi
-        ' sh >> "$VERIFIED_SECRETS_FILE" &
+        ' sh >>"$PROCESSED_SECRETS" &
+
         verification_pid=$!
         # Spinner animation
         printf "${CYAN}┗━▶ Verification in Progress...${NC} "
@@ -437,20 +493,19 @@ if [[ -n "$VERIFIED_SECRETS_FILE" && -n "$SECRETS_FILE" ]]; then
             spinner_i=$((spinner_i + 1))
             sleep 0.1
         done
-        printf "\r${CYAN}┗━▶ Verification Complete.        ${NC}\n"
+        printf "\r${CYAN}┗━▶ Verification Complete.      ${NC}\n"
         wait "$verification_pid"
-        exit_code=$?
-        if [[ $exit_code -ne 0 ]]; then
-            warn "Verification failed (code $exit_code)"
-        fi
     fi
-    VERIFIED_SECRETS_FOUND=$(wc -l < "$VERIFIED_SECRETS_FILE" | tr -d ' ')
-    detail "Verified secrets: $VERIFIED_SECRETS_FOUND"
-    if [[ $VERIFIED_SECRETS_FOUND -eq 0 ]]; then
-        rm "$VERIFIED_SECRETS_FILE"
-        VERIFIED_SECRETS_FILE=""
-        detail "Empty verified file removed"
-    fi
+
+    # Overwrite the original secrets file with the new, processed results
+    sort -u "$PROCESSED_SECRETS" >"$SECRETS_FILE"
+    VERIFIED_SECRETS_FOUND=$(grep -c "(verified)" "$SECRETS_FILE" || echo 0)
+    detail "Found $VERIFIED_SECRETS_FOUND verified secrets."
+
+    # Cleanup temp files
+    rm "$PROCESSED_SECRETS" "$VERIFIABLE_SECRETS"
+else
+    VERIFIED_SECRETS_FOUND=0
 fi
 
 # --- Summary ---
@@ -462,14 +517,9 @@ echo -e "    ├── Total JS URLs Found: $total_js 🚀"
 echo -e "    ├── URLs for Analysis: $urls_for_analysis 🎯"
 [[ -n "$JS_URLS_FILE" ]] && echo -e "    ├── JS File: $JS_URLS_FILE 📄"
 if [[ -n "$SECRETS_FILE" ]]; then
-    echo -e "    ├── Secrets: $SECRETS_FOUND ⚠️ ($SECRETS_FILE)"
+    echo -e "    ├── Secrets: $SECRETS_FOUND found ($VERIFIED_SECRETS_FOUND verified) 🔒 ($SECRETS_FILE)"
 else
     echo -e "    ├── Secrets: 0 (None)"
-fi
-if [[ -n "$VERIFIED_SECRETS_FILE" ]]; then
-    echo -e "    ├── Verified Secrets: $VERIFIED_SECRETS_FOUND 🔒 ($VERIFIED_SECRETS_FILE)"
-else
-    echo -e "    ├── Verified Secrets: 0 (None)"
 fi
 if [[ -n "$PATHS_FILE" ]]; then
     echo -e "    ├── Paths: $PATHS_FOUND 🛤️ ($PATHS_FILE)"
