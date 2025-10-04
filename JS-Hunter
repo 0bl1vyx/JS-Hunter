@@ -312,7 +312,6 @@ process_js_url() {
         regexes[k8s_secret_name]="((?i)secretName:\s*['\"]?[a-z0-9\-]+['\"]?)"
         regexes[github_actions_secret_ref]="(secrets\.[A-Z0-9_]+)"
         regexes[k8s_service_account_token]="(eyJhbGciOiJSUzI1NiIsImtpZCI6)"
-        regexes[vault_token]="(s\.[a-zA-Z0-9]{8,})"
         regexes[circleci_token]="(circle-token=[a-z0-9]{40})"
         regexes[travisci_token]="((?i)travis(.{0,20})?token['\"\s:=]+[a-z0-9]{30,})"
         regexes[azure_devops_token]="([a-z0-9]{52})"
