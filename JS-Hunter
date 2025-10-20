@@ -2,11 +2,11 @@
 # --- Colors & Styles ---
 # Hacker minimalist theme: Matrix-inspired greens, subtle cyans, clean contrasts.
 HACKER_GREEN=$(tput setaf 2) # Main text and success
-CYAN=$(tput setaf 6)         # Highlights and info
-ORANGE=$(tput setaf 3)       # Warnings
-RED=$(tput setaf 1)          # Errors
-WHITE=$(tput setaf 7)        # Neutral text
-DIM=$(tput dim)              # Subtle dim for details
+CYAN=$(tput setaf 6)          # Highlights and info
+ORANGE=$(tput setaf 3)        # Warnings
+RED=$(tput setaf 1)           # Errors
+WHITE=$(tput setaf 7)         # Neutral text
+DIM=$(tput dim)               # Subtle dim for details
 BOLD=$(tput bold)
 NC=$(tput sgr0) # No Color
 
@@ -19,7 +19,7 @@ banner() {
     echo "██╗  ██║╚════██║██╔══██║██║   ██║██║╚██╗██║   ██║   ██╔════╝██╔══██╗"
     echo "╚██████║███████║██║  ██║╚██████╔╝██║ ╚████║   ██║   ███████╗██║  ██║"
     echo " ╚═════╝╚══════╝╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═══╝   ╚═╝   ╚══════╝╚═╝  ╚═╝"
-    echo "                                        by 0bl1vyx V6.5"
+    echo "                                          by 0bl1vyx V6.5"
     echo -e "${NC}"
 }
 header() {
@@ -49,11 +49,12 @@ help_menu() {
     echo -e " -s <file>  Secrets output (verified where possible)"
     echo -e " -p <file>  Paths output"
     echo -e " -l <file>  Links output"
-    echo -e " -lv <1-4>  Discovery level (default: 4)"
+    echo -e " -px <host:port> Use a proxy for Katana (e.g., 127.0.0.1:8080)"
+    echo -e " -lv <1-3>  Discovery level (default: 3)"
     echo -e " -c <num>   Concurrency level (default: 4)"
     echo -e " -v         Verbose output (extra details)"
     echo -e " -h, --help This guide\n"
-    echo -e "${HACKER_GREEN}Example:${NC} $0 -dl domains.txt -o js.txt -s secrets.txt -p paths.txt -l links.txt -lv 2 -c 8 -v"
+    echo -e "${HACKER_GREEN}Example:${NC} $0 -dl domains.txt -s secrets.txt -px 127.0.0.1:8080 -v"
     exit 0
 }
 error() {
@@ -85,13 +86,14 @@ JS_URLS_FILE=""
 SECRETS_FILE=""
 PATHS_FILE=""
 LINKS_FILE=""
-LEVEL=4
+PROXY=""
+LEVEL=3
 CONCURRENCY=4
 VERBOSE=false
 while [[ $# -gt 0 ]]; do
     key="$1"
     case $key in
-    -dl | -o | -s | -p | -l | -lv | -c)
+    -dl | -o | -s | -p | -l | -lv | -c | -px)
         if [[ $# -lt 2 || "$2" == -* ]]; then
             error "Missing value for $key"
         fi
@@ -103,11 +105,15 @@ while [[ $# -gt 0 ]]; do
         -s) SECRETS_FILE="$value" ;;
         -p) PATHS_FILE="$value" ;;
         -l) LINKS_FILE="$value" ;;
+        -px) PROXY="$value" ;;
         -lv) LEVEL="$value" ;;
         -c) CONCURRENCY="$value" ;;
         esac
         ;;
-    -v) VERBOSE=true; shift ;;
+    -v)
+        VERBOSE=true
+        shift
+        ;;
     -h | --help) help_menu ;;
     *) error "Invalid option: $1" ;;
     esac
@@ -116,17 +122,15 @@ done
 # --- Validation ---
 [[ -z "$DOMAIN_LIST_INPUT" ]] && error "Domain list required (-dl <file>)"
 [[ ! -f "$DOMAIN_LIST_INPUT" ]] && error "File '$DOMAIN_LIST_INPUT' not found"
-[[ ! "$LEVEL" =~ ^[1-4]$ ]] && error "Level must be 1-4"
+[[ ! "$LEVEL" =~ ^[1-3]$ ]] && error "Level must be 1-3"
 [[ ! "$CONCURRENCY" =~ ^[1-9][0-9]*$ ]] && error "Concurrency must be a positive integer"
 
 # --- Dynamic Dependency Check ---
 declare -A tools=(
     [1]="subjs"
     [2]="katana"
-    [3]="waybackurls"
-    [4]="gau"
+    [3]="waymore"
 )
-# httpx removed from this list
 dependencies=("curl" "grep" "sed" "sort" "wc" "awk" "tr")
 for i in $(seq 1 $LEVEL); do
     dependencies+=("${tools[$i]}")
@@ -157,6 +161,20 @@ detail "URLs ready for scanning"
 UA="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36"
 detail "User-Agent set: $UA"
 
+# --- Proxy Verification ---
+if [[ -n "$PROXY" ]]; then
+    detail "Using proxy for Katana: $PROXY"
+    detail "Verifying proxy connection to google.com..."
+    # Use curl to test the proxy. We check for common success/redirect codes.
+    http_code=$(curl --proxy "$PROXY" --connect-timeout 5 -s -o /dev/null -w "%{http_code}" "https://www.google.com")
+    if [[ "$http_code" == "200" || "$http_code" == "301" || "$http_code" == "302" ]]; then
+        detail "Proxy verification successful (Status: $http_code)."
+    else
+        error "Proxy verification failed. curl returned status: $http_code. Please check your proxy settings or network."
+    fi
+fi
+
+
 # --- Spinner Frames ---
 SPINNER_FRAMES='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
 
@@ -174,13 +192,14 @@ for i in $(seq 1 $LEVEL); do
         subjs -i "$URLS" -ua "$UA" -c "$CONCURRENCY" >"${results[$tool]}" &
         ;;
     "katana")
-        cat "$URLS" | xargs -P "$CONCURRENCY" -I {} sh -c "katana -u {} -jc -silent -H 'User-Agent: $UA' | grep -Ei '\.js([?#].*)?\$' >> '${results[$tool]}' || true" &
+        proxy_flag=""
+        if [[ -n "$PROXY" ]]; then
+            proxy_flag="-proxy $PROXY"
+        fi
+        cat "$URLS" | xargs -P "$CONCURRENCY" -I {} sh -c "katana -u {} $proxy_flag -jc -silent -H 'User-Agent: $UA' | grep -Ei '\.js([?#].*)?\$' >> '${results[$tool]}' || true" &
         ;;
-    "waybackurls")
-        cat "$DOMAINS" | xargs -P "$CONCURRENCY" -I {} sh -c "waybackurls {} | grep -Ei '\.js([?#].*)?\$' >> '${results[$tool]}' || true" &
-        ;;
-    "gau")
-        cat "$DOMAINS" | xargs -P "$CONCURRENCY" -I {} sh -c "gau {} 2>/dev/null | grep -Ei '\.js([?#].*)?\$' >> '${results[$tool]}' || true" &
+    "waymore")
+        waymore -i "$DOMAINS" -mode U -ko "\.js(\?|$)" -p "$CONCURRENCY" --stream 2>/dev/null >>"${results[$tool]}" &
         ;;
     esac
     pids[$tool]=$!
@@ -202,7 +221,7 @@ while true; do
     spinner_i=$((spinner_i + 1))
     sleep 0.1
 done
-printf "\r${CYAN}┗━▶ Discovery Complete.        ${NC}\n"
+printf "\r${CYAN}┗━▶ Discovery Complete.          ${NC}\n"
 # Check exit codes
 for tool in "${!pids[@]}"; do
     wait "${pids[$tool]}"
@@ -360,7 +379,6 @@ if [[ -n "$SECRETS_FILE" || -n "$PATHS_FILE" || -n "$LINKS_FILE" ]]; then
 
     cat "$SCAN_TARGETS" | xargs -P "$CONCURRENCY" -I {} bash -c 'process_js_url "{}"' >"$ANALYSIS_RESULTS" &
     analysis_pid=$!
-
     # Spinner animation
     printf "${CYAN}┗━▶ Analysis in Progress...${NC} "
     spinner_i=0
@@ -494,7 +512,6 @@ if [[ -n "$SECRETS_FILE" && $SECRETS_FOUND -gt 0 ]]; then
     sort -u "$PROCESSED_SECRETS" >"$SECRETS_FILE"
     VERIFIED_SECRETS_FOUND=$(grep -c "(verified)" "$SECRETS_FILE" || echo 0)
     detail "Found $VERIFIED_SECRETS_FOUND verified secrets."
-
     # Cleanup temp files
     rm "$PROCESSED_SECRETS" "$VERIFIABLE_SECRETS"
 else
@@ -525,3 +542,4 @@ else
     echo -e "    ├── Links: 0 (None)"
 fi
 echo -e "    └── Time Taken: ${total_time}s ⏱"
+
