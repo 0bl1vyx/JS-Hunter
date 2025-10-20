@@ -2,11 +2,11 @@
 # --- Colors & Styles ---
 # Hacker minimalist theme: Matrix-inspired greens, subtle cyans, clean contrasts.
 HACKER_GREEN=$(tput setaf 2) # Main text and success
-CYAN=$(tput setaf 6)          # Highlights and info
-ORANGE=$(tput setaf 3)        # Warnings
-RED=$(tput setaf 1)           # Errors
-WHITE=$(tput setaf 7)         # Neutral text
-DIM=$(tput dim)               # Subtle dim for details
+CYAN=$(tput setaf 6)      # Highlights and info
+ORANGE=$(tput setaf 3)    # Warnings
+RED=$(tput setaf 1)       # Errors
+WHITE=$(tput setaf 7)     # Neutral text
+DIM=$(tput dim)           # Subtle dim for details
 BOLD=$(tput bold)
 NC=$(tput sgr0) # No Color
 
@@ -19,7 +19,7 @@ banner() {
     echo "██╗  ██║╚════██║██╔══██║██║   ██║██║╚██╗██║   ██║   ██╔════╝██╔══██╗"
     echo "╚██████║███████║██║  ██║╚██████╔╝██║ ╚████║   ██║   ███████╗██║  ██║"
     echo " ╚═════╝╚══════╝╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═══╝   ╚═╝   ╚══════╝╚═╝  ╚═╝"
-    echo "                                          by 0bl1vyx V6.5"
+    echo "                                          by 0bl1vyx V7"
     echo -e "${NC}"
 }
 header() {
@@ -36,7 +36,7 @@ tool_result() {
 }
 detail() {
     if [[ "$VERBOSE" == true ]]; then
-        echo -e "${DIM}    • ${1}${NC}"
+        echo -e "${DIM}      • ${1}${NC}"
     fi
 }
 help_menu() {
@@ -49,12 +49,12 @@ help_menu() {
     echo -e " -s <file>  Secrets output (verified where possible)"
     echo -e " -p <file>  Paths output"
     echo -e " -l <file>  Links output"
-    echo -e " -px <host:port> Use a proxy for Katana (e.g., 127.0.0.1:8080)"
+    echo -e " -px <proxy> Proxy for Katana ONLY (e.g., http://127.0.0.1:8080)"
     echo -e " -lv <1-3>  Discovery level (default: 3)"
     echo -e " -c <num>   Concurrency level (default: 4)"
     echo -e " -v         Verbose output (extra details)"
     echo -e " -h, --help This guide\n"
-    echo -e "${HACKER_GREEN}Example:${NC} $0 -dl domains.txt -s secrets.txt -px 127.0.0.1:8080 -v"
+    echo -e "${HACKER_GREEN}Example:${NC} $0 -dl domains.txt -o js.txt -s secrets.txt -p paths.txt -l links.txt -lv 2 -c 8 -v -px http://127.0.0.1:8080"
     exit 0
 }
 error() {
@@ -86,8 +86,8 @@ JS_URLS_FILE=""
 SECRETS_FILE=""
 PATHS_FILE=""
 LINKS_FILE=""
-PROXY=""
-LEVEL=3
+PROXY_URL=""
+LEVEL=3 # Default level changed to 3
 CONCURRENCY=4
 VERBOSE=false
 while [[ $# -gt 0 ]]; do
@@ -105,15 +105,12 @@ while [[ $# -gt 0 ]]; do
         -s) SECRETS_FILE="$value" ;;
         -p) PATHS_FILE="$value" ;;
         -l) LINKS_FILE="$value" ;;
-        -px) PROXY="$value" ;;
+        -px) PROXY_URL="$value" ;;
         -lv) LEVEL="$value" ;;
         -c) CONCURRENCY="$value" ;;
         esac
         ;;
-    -v)
-        VERBOSE=true
-        shift
-        ;;
+    -v) VERBOSE=true; shift ;;
     -h | --help) help_menu ;;
     *) error "Invalid option: $1" ;;
     esac
@@ -122,14 +119,14 @@ done
 # --- Validation ---
 [[ -z "$DOMAIN_LIST_INPUT" ]] && error "Domain list required (-dl <file>)"
 [[ ! -f "$DOMAIN_LIST_INPUT" ]] && error "File '$DOMAIN_LIST_INPUT' not found"
-[[ ! "$LEVEL" =~ ^[1-3]$ ]] && error "Level must be 1-3"
+[[ ! "$LEVEL" =~ ^[1-3]$ ]] && error "Level must be 1-3" # Validation changed to 1-3
 [[ ! "$CONCURRENCY" =~ ^[1-9][0-9]*$ ]] && error "Concurrency must be a positive integer"
 
 # --- Dynamic Dependency Check ---
 declare -A tools=(
     [1]="subjs"
     [2]="katana"
-    [3]="waymore"
+    [3]="waymore" # Replaced waybackurls and gau
 )
 dependencies=("curl" "grep" "sed" "sort" "wc" "awk" "tr")
 for i in $(seq 1 $LEVEL); do
@@ -147,6 +144,29 @@ detail "Dependencies checked: ${dependencies[*]}"
 [[ -n "$PATHS_FILE" ]] && confirm_overwrite "$PATHS_FILE"
 [[ -n "$LINKS_FILE" ]] && confirm_overwrite "$LINKS_FILE"
 
+# --- Proxy Configuration ---
+KATANA_PROXY_ARG=""
+# Proxy is only for Katana. CURL_PROXY_ARG will be explicitly empty.
+CURL_PROXY_ARG="" 
+if [[ -n "$PROXY_URL" ]]; then
+    KATANA_PROXY_ARG="-proxy $PROXY_URL"
+    detail "Using proxy for Katana: $PROXY_URL"
+
+    # --- PROXY CHECK ---
+    # Test the proxy connection using curl.
+    # This curl call is *only* for testing, it does not use CURL_PROXY_ARG.
+    info "Testing proxy connection to https://www.google.com..."
+    if curl -s --connect-timeout 5 --proxy "$PROXY_URL" -o /dev/null https://www.google.com; then
+        info "Proxy connection successful."
+    else
+        error "Proxy check failed. Cannot connect via $PROXY_URL"
+    fi
+    # --- END PROXY CHECK ---
+
+fi
+# Export KATANA_PROXY_ARG for use, and the EMPTY CURL_PROXY_ARG
+export KATANA_PROXY_ARG CURL_PROXY_ARG
+
 # --- Main Execution ---
 clear
 banner
@@ -160,20 +180,6 @@ awk '{print "https://" $0}' "$DOMAINS" >"$URLS"
 detail "URLs ready for scanning"
 UA="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36"
 detail "User-Agent set: $UA"
-
-# --- Proxy Verification ---
-if [[ -n "$PROXY" ]]; then
-    detail "Using proxy for Katana: $PROXY"
-    detail "Verifying proxy connection to google.com..."
-    # Use curl to test the proxy. We check for common success/redirect codes.
-    http_code=$(curl --proxy "$PROXY" --connect-timeout 5 -s -o /dev/null -w "%{http_code}" "https://www.google.com")
-    if [[ "$http_code" == "200" || "$http_code" == "301" || "$http_code" == "302" ]]; then
-        detail "Proxy verification successful (Status: $http_code)."
-    else
-        error "Proxy verification failed. curl returned status: $http_code. Please check your proxy settings or network."
-    fi
-fi
-
 
 # --- Spinner Frames ---
 SPINNER_FRAMES='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
@@ -189,17 +195,15 @@ for i in $(seq 1 $LEVEL); do
     detail "Temp file: ${results[$tool]}"
     case $tool in
     "subjs")
+        # subjs does not natively support a proxy flag
         subjs -i "$URLS" -ua "$UA" -c "$CONCURRENCY" >"${results[$tool]}" &
         ;;
     "katana")
-        proxy_flag=""
-        if [[ -n "$PROXY" ]]; then
-            proxy_flag="-proxy $PROXY"
-        fi
-        cat "$URLS" | xargs -P "$CONCURRENCY" -I {} sh -c "katana -u {} $proxy_flag -jc -silent -H 'User-Agent: $UA' | grep -Ei '\.js([?#].*)?\$' >> '${results[$tool]}' || true" &
+        cat "$URLS" | xargs -P "$CONCURRENCY" -I {} sh -c "katana -u {} -jc -silent -H 'User-Agent: $UA' $KATANA_PROXY_ARG | grep -Ei '\.js([?#].*)?\$' >> '${results[$tool]}' || true" &
         ;;
     "waymore")
-        waymore -i "$DOMAINS" -mode U -ko "\.js(\?|$)" -p "$CONCURRENCY" --stream 2>/dev/null >>"${results[$tool]}" &
+        # Per user request, waymore does not use the proxy.
+        cat "$DOMAINS" | xargs -P "$CONCURRENCY" -I {} sh -c "waymore -i {} -mode U --stream 2>/dev/null | grep -Ei '\.js([?#].*)?\$' >> '${results[$tool]}' || true" &
         ;;
     esac
     pids[$tool]=$!
@@ -221,7 +225,7 @@ while true; do
     spinner_i=$((spinner_i + 1))
     sleep 0.1
 done
-printf "\r${CYAN}┗━▶ Discovery Complete.          ${NC}\n"
+printf "\r${CYAN}┗━▶ Discovery Complete.        ${NC}\n"
 # Check exit codes
 for tool in "${!pids[@]}"; do
     wait "${pids[$tool]}"
@@ -265,11 +269,13 @@ LINKS_FOUND=0
 
 # This function is exported and run in parallel for each URL.
 # It fetches the URL content once and scans for secrets, paths, and links.
+# CURL_PROXY_ARG is inherited from export and is EMPTY.
 process_js_url() {
     local url="$1"
     # Using --connect-timeout to prevent hanging, -L to follow redirects
+    # $CURL_PROXY_ARG is empty, so no proxy is used (as requested)
     local content
-    content=$(curl --connect-timeout 5 -s -L -A "$UA" "$url")
+    content=$(curl --connect-timeout 5 -s -L -A "$UA" $CURL_PROXY_ARG "$url")
 
     # Exit if content is empty
     if [[ -z "$content" ]]; then
@@ -372,13 +378,14 @@ if [[ -n "$SECRETS_FILE" || -n "$PATHS_FILE" || -n "$LINKS_FILE" ]]; then
     ENABLE_LINKS="false" && [[ -n "$LINKS_FILE" ]] && ENABLE_LINKS="true"
 
     export -f process_js_url
-    export UA ENABLE_SECRETS ENABLE_PATHS ENABLE_LINKS
+    export UA ENABLE_SECRETS ENABLE_PATHS ENABLE_LINKS CURL_PROXY_ARG
 
     ANALYSIS_RESULTS=$(mktemp)
     detail "Aggregating analysis results into: $ANALYSIS_RESULTS"
 
     cat "$SCAN_TARGETS" | xargs -P "$CONCURRENCY" -I {} bash -c 'process_js_url "{}"' >"$ANALYSIS_RESULTS" &
     analysis_pid=$!
+
     # Spinner animation
     printf "${CYAN}┗━▶ Analysis in Progress...${NC} "
     spinner_i=0
@@ -389,7 +396,7 @@ if [[ -n "$SECRETS_FILE" || -n "$PATHS_FILE" || -n "$LINKS_FILE" ]]; then
         sleep 0.1
     done
     wait "$analysis_pid"
-    printf "\r${CYAN}┗━▶ Analysis Complete.         ${NC}\n"
+    printf "\r${CYAN}┗━▶ Analysis Complete.            ${NC}\n"
 
     # Process aggregated results from the temp file
     if [[ "$ENABLE_SECRETS" == "true" ]]; then
@@ -428,6 +435,7 @@ fi
 
 # --- Verification Phase ---
 # This phase runs if secrets were found, and it will update the secrets file with verification statuses.
+# $CURL_PROXY_ARG is inherited as empty, so no proxy will be used here either.
 if [[ -n "$SECRETS_FILE" && $SECRETS_FOUND -gt 0 ]]; then
     stage "Phase 3.1: Verifying Secrets"
 
@@ -450,39 +458,39 @@ if [[ -n "$SECRETS_FILE" && $SECRETS_FOUND -gt 0 ]]; then
             type=$1; secret=$2
             case "$type" in
                 slack_token)
-                    cmd="curl -s -X POST \"https://slack.com/api/auth.test\" -H \"Authorization: Bearer $secret\""
+                    cmd="curl -s $CURL_PROXY_ARG -X POST \"https://slack.com/api/auth.test\" -H \"Authorization: Bearer $secret\""
                     check="{\"ok\":true"
                     ;;
                 facebook_access_token)
-                    cmd="curl -s \"https://graph.facebook.com/me?access_token=$secret\""
+                    cmd="curl -s $CURL_PROXY_ARG \"https://graph.facebook.com/me?access_token=$secret\""
                     check="\"id\":"
                     ;;
                 github_token)
-                    cmd="curl -s -H \"Authorization: token $secret\" \"https://api.github.com/user\""
+                    cmd="curl -s $CURL_PROXY_ARG -H \"Authorization: token $secret\" \"https://api.github.com/user\""
                     check="\"login\":"
                     ;;
                 google_api_key)
-                    cmd="curl -s \"https://www.googleapis.com/discovery/v1/apis?key=$secret\""
+                    cmd="curl -s $CURL_PROXY_ARG \"https://www.googleapis.com/discovery/v1/apis?key=$secret\""
                     check="\"kind\":\"DiscoveryDocument"
                     ;;
                 cloudflare_api_token)
-                    cmd="curl -s -X GET \"https://api.cloudflare.com/client/v4/user/tokens/verify\" -H \"Authorization: Bearer $secret\" -H \"Content-Type: application/json\""
+                    cmd="curl -s $CURL_PROXY_ARG -X GET \"https://api.cloudflare.com/client/v4/user/tokens/verify\" -H \"Authorization: Bearer $secret\" -H \"Content-Type: application/json\""
                     check="\"success\":true"
                     ;;
                 firebase_url)
-                    cmd="curl -s \"$secret.json?auth=dev\""
+                    cmd="curl -s $CURL_PROXY_ARG \"$secret.json?auth=dev\""
                     check="^{\""
                     ;;
                 datadog_api_key)
-                    cmd="curl -s -H \"DD-API-KEY: $secret\" \"https://api.datadoghq.com/api/v1/validate\""
+                    cmd="curl -s $CURL_PROXY_ARG -H \"DD-API-KEY: $secret\" \"https://api.datadoghq.com/api/v1/validate\""
                     check="\"valid\":true"
                     ;;
                 browserstack_access_key)
-                    cmd="curl -s -u \"$secret:unused\" \"https://api.browserstack.com/automate/users.json\""
+                    cmd="curl -s $CURL_PROXY_ARG -u \"$secret:unused\" \"https://api.browserstack.com/automate/users.json\""
                     check="\"hashed_id\":"
                     ;;
                 asana_pat)
-                    cmd="curl -s -H \"Authorization: Bearer $secret\" \"https://app.asana.com/api/1.0/users/me\""
+                    cmd="curl -s $CURL_PROXY_ARG -H \"Authorization: Bearer $secret\" \"https://app.asana.com/api/1.0/users/me\""
                     check="\"gid\":"
                     ;;
             esac
@@ -512,6 +520,7 @@ if [[ -n "$SECRETS_FILE" && $SECRETS_FOUND -gt 0 ]]; then
     sort -u "$PROCESSED_SECRETS" >"$SECRETS_FILE"
     VERIFIED_SECRETS_FOUND=$(grep -c "(verified)" "$SECRETS_FILE" || echo 0)
     detail "Found $VERIFIED_SECRETS_FOUND verified secrets."
+
     # Cleanup temp files
     rm "$PROCESSED_SECRETS" "$VERIFIABLE_SECRETS"
 else
@@ -542,4 +551,3 @@ else
     echo -e "    ├── Links: 0 (None)"
 fi
 echo -e "    └── Time Taken: ${total_time}s ⏱"
-
