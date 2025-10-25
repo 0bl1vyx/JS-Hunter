@@ -198,8 +198,10 @@ for i in $(seq 1 $LEVEL); do
         # subjs does not natively support a proxy flag
         subjs -i "$URLS" -ua "$UA" -c "$CONCURRENCY" >"${results[$tool]}" &
         ;;
-    "katana")
-        cat "$URLS" | xargs -P "$CONCURRENCY" -I {} sh -c "katana -u {} -jc -silent --no-sandbox -sc -H 'User-Agent: $UA' $KATANA_PROXY_ARG | grep -Ei '\.js([?#].*)?\$' >> '${results[$tool]}' || true" &
+    ("katana")
+        cat "$URLS" | xargs -P "$CONCURRENCY" -I {} sh -c \
+        "katana -u {} -hl -jc -sc --no-sandbox -silent -H 'User-Agent: $UA' $KATANA_PROXY_ARG \
+        | grep -Ei '\\.js([?#].*)?\$' >> '${results[$tool]}' || true" &
         ;;
     "waymore")
         # Per user request, waymore does not use the proxy.
