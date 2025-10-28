@@ -55,10 +55,7 @@ Input List ─►│ 1. Discover JS ├─►─► │ 2. Consolidate├─►�
     go install -v github.com/projectdiscovery/katana/cmd/katana@latest
 
     # (Required for Level 3)
-    go install -v github.com/tomnomnom/waybackurls@latest
-
-    # (Required for Level 4 - Recommended for best results)
-    go install -v github.com/lc/gau/v2/cmd/gau@latest
+    apt install waymore
     ```
 
     Ensure that your Go bin directory (`$HOME/go/bin`) is in your system's `$PATH`.
